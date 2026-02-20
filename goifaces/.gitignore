@@ -1,0 +1,4 @@
+logs/
+goifaces
+testdata/*/output.mmd
+testdata/*/output.svg
