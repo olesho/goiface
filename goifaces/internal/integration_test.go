@@ -2,6 +2,8 @@ package internal_test
 
 import (
 	"context"
+	"go/token"
+	"go/types"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -79,7 +81,7 @@ func normalizeOutput(s string) string {
 				i++
 			}
 			blocks = append(blocks, strings.Join(block, "\n"))
-		} else if strings.Contains(trimmed, "..|>") {
+		} else if strings.Contains(trimmed, "..|>") || strings.Contains(trimmed, "--|>") {
 			relations = append(relations, line)
 			i++
 		} else {
@@ -417,7 +419,99 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	assert.Contains(t, filterSlide, "memdb_ResultIterator",
 		"ResultIterator should be on same slide as FilterIterator")
 
-	// Overview should not have methods (class bodies empty)
+	// Overview should show only interface nodes, no implementations
 	overview := slides[0].Mermaid
 	assert.NotContains(t, overview, "+", "overview should have no method lines")
+	assert.NotContains(t, overview, "..|>", "overview should have no implementation arrows")
+	assert.NotContains(t, overview, "implStyle", "overview should have no implStyle")
+
+	// Overview should contain interface nodes
+	assert.Contains(t, overview, "memdb_Indexer")
+	assert.Contains(t, overview, "memdb_MultiIndexer")
+	assert.Contains(t, overview, "memdb_SingleIndexer")
+	assert.Contains(t, overview, "memdb_PrefixIndexer")
+	assert.Contains(t, overview, "memdb_ResultIterator")
+
+	// Overview should NOT contain implementation nodes
+	assert.NotContains(t, overview, "memdb_BoolFieldIndex")
+	assert.NotContains(t, overview, "memdb_FilterIterator")
+	assert.NotContains(t, overview, "memdb_CompoundIndex")
+}
+
+func TestOverviewInterfaceEmbedding(t *testing.T) {
+	// Build synthetic interfaces: ReadCloser embeds Reader and Closer
+	pkg := types.NewPackage("example.com/io2", "io2")
+
+	readMethod := types.NewFunc(token.NoPos, pkg, "Read",
+		types.NewSignatureType(nil, nil, nil,
+			types.NewTuple(types.NewVar(token.NoPos, pkg, "p", types.NewSlice(types.Typ[types.Byte]))),
+			types.NewTuple(
+				types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int]),
+				types.NewVar(token.NoPos, pkg, "", types.Universe.Lookup("error").Type()),
+			),
+			false,
+		),
+	)
+	readerIface := types.NewInterfaceType([]*types.Func{readMethod}, nil)
+	readerIface.Complete()
+	readerNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Reader", nil), readerIface, nil)
+
+	closeMethod := types.NewFunc(token.NoPos, pkg, "Close",
+		types.NewSignatureType(nil, nil, nil,
+			nil,
+			types.NewTuple(types.NewVar(token.NoPos, pkg, "", types.Universe.Lookup("error").Type())),
+			false,
+		),
+	)
+	closerIface := types.NewInterfaceType([]*types.Func{closeMethod}, nil)
+	closerIface.Complete()
+	closerNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Closer", nil), closerIface, nil)
+
+	// ReadCloser embeds Reader and Closer
+	readCloserIface := types.NewInterfaceType(nil, []types.Type{readerNamed, closerNamed})
+	readCloserIface.Complete()
+
+	ifaces := []analyzer.InterfaceDef{
+		{Name: "Reader", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readerIface},
+		{Name: "Closer", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: closerIface},
+		{Name: "ReadCloser", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readCloserIface},
+	}
+
+	// Add a type that implements ReadCloser (for detail slides)
+	implType := &analyzer.TypeDef{Name: "MyFile", PkgPath: "example.com/io2", PkgName: "io2"}
+	rels := []analyzer.Relation{
+		{Type: implType, Interface: &ifaces[0]},
+		{Type: implType, Interface: &ifaces[1]},
+		{Type: implType, Interface: &ifaces[2]},
+	}
+
+	result := &analyzer.Result{
+		Interfaces: ifaces,
+		Types:      []analyzer.TypeDef{*implType},
+		Relations:  rels,
+	}
+
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 1, ChunkSize: 3})
+	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting
+	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+
+	require.GreaterOrEqual(t, len(slides), 2, "should have at least overview + 1 detail slide")
+	assert.Equal(t, "Overview", slides[0].Title)
+
+	overview := slides[0].Mermaid
+
+	// Overview should contain interface nodes
+	assert.Contains(t, overview, "io2_Reader")
+	assert.Contains(t, overview, "io2_Closer")
+	assert.Contains(t, overview, "io2_ReadCloser")
+
+	// Overview should contain embedding arrows (--|>)
+	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Closer", "ReadCloser should embed Closer")
+	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Reader", "ReadCloser should embed Reader")
+
+	// Overview should NOT contain implementation nodes or arrows
+	assert.NotContains(t, overview, "io2_MyFile", "overview should not have implementation nodes")
+	assert.NotContains(t, overview, "..|>", "overview should not have implementation arrows")
+	assert.NotContains(t, overview, "implStyle", "overview should not have implStyle")
 }

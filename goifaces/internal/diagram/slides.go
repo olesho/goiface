@@ -2,6 +2,7 @@ package diagram
 
 import (
 	"fmt"
+	"go/types"
 	"sort"
 	"strings"
 
@@ -104,9 +105,9 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 	return sub
 }
 
-// generateOverviewMermaid produces a Mermaid classDiagram with all nodes but empty class bodies
-// (only <<interface>> tag, no methods). Includes init directive, classDef styles, cssClass
-// assignments, and all relation lines.
+// generateOverviewMermaid produces a Mermaid classDiagram showing only interface nodes
+// and interface embedding/extension arrows (--|>). Implementation blocks and implementation
+// arrows (..|>) are omitted — they appear only on detail slides.
 func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	var b strings.Builder
 
@@ -120,40 +121,22 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 		return ifaces[i].Name < ifaces[j].Name
 	})
 
-	// Sort types deterministically
-	typs := make([]analyzer.TypeDef, len(result.Types))
-	copy(typs, result.Types)
-	sort.Slice(typs, func(i, j int) bool {
-		if typs[i].PkgName != typs[j].PkgName {
-			return typs[i].PkgName < typs[j].PkgName
-		}
-		return typs[i].Name < typs[j].Name
-	})
-
-	// Sort relations deterministically
-	rels := make([]analyzer.Relation, len(result.Relations))
-	copy(rels, result.Relations)
-	sort.Slice(rels, func(i, j int) bool {
-		typeKeyI := rels[i].Type.PkgName + "_" + rels[i].Type.Name
-		typeKeyJ := rels[j].Type.PkgName + "_" + rels[j].Type.Name
-		if typeKeyI != typeKeyJ {
-			return typeKeyI < typeKeyJ
-		}
-		ifaceKeyI := rels[i].Interface.PkgName + "_" + rels[i].Interface.Name
-		ifaceKeyJ := rels[j].Interface.PkgName + "_" + rels[j].Interface.Name
-		return ifaceKeyI < ifaceKeyJ
-	})
+	// Build lookup of interfaces by (pkgPath, name) for embedding detection
+	type ifaceKey struct{ pkgPath, name string }
+	ifaceLookup := make(map[ifaceKey]analyzer.InterfaceDef, len(ifaces))
+	for _, iface := range ifaces {
+		ifaceLookup[ifaceKey{iface.PkgPath, iface.Name}] = iface
+	}
 
 	// Header + style definitions
 	if opts.IncludeInit {
 		b.WriteString("%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cccccc', 'primaryTextColor': '#000000', 'lineColor': '#555555'}}%%\n")
 	}
 	b.WriteString("classDiagram")
-	if len(ifaces) > 0 || len(typs) > 0 {
+	if len(ifaces) > 0 {
 		b.WriteString("\n")
 		b.WriteString("    direction LR\n")
-		b.WriteString("    classDef interfaceStyle fill:#2374ab,stroke:#1a5a8a,color:#fff,stroke-width:2px,font-weight:bold\n")
-		b.WriteString("    classDef implStyle fill:#4a9c6d,stroke:#357a50,color:#fff,stroke-width:2px")
+		b.WriteString("    classDef interfaceStyle fill:#2374ab,stroke:#1a5a8a,color:#fff,stroke-width:2px,font-weight:bold")
 	}
 
 	// Interface blocks — empty bodies with only <<interface>> tag
@@ -165,36 +148,50 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 		b.WriteString("    }")
 	}
 
-	// Type blocks — empty bodies
-	if len(ifaces) > 0 && len(typs) > 0 {
-		b.WriteString("\n")
+	// Embedding relations: interface --|> interface (solid + triangle for inheritance)
+	var embeddings []string
+	for _, iface := range ifaces {
+		if iface.TypeObj == nil {
+			continue
+		}
+		childID := nodeID(iface.PkgName, iface.Name)
+		for i := 0; i < iface.TypeObj.NumEmbeddeds(); i++ {
+			embedded := iface.TypeObj.EmbeddedType(i)
+			named, ok := embedded.(*types.Named)
+			if !ok {
+				continue
+			}
+			obj := named.Obj()
+			if obj.Pkg() == nil {
+				continue // universe-scope type like error
+			}
+			parent, exists := ifaceLookup[ifaceKey{obj.Pkg().Path(), obj.Name()}]
+			if !exists {
+				continue // embedded interface not in our result set
+			}
+			parentID := nodeID(parent.PkgName, parent.Name)
+			if childID == parentID {
+				continue // guard against self-embedding
+			}
+			embeddings = append(embeddings, fmt.Sprintf("    %s --|> %s", childID, parentID))
+		}
 	}
-	for _, typ := range typs {
-		id := nodeID(typ.PkgName, typ.Name)
-		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("    class %s {\n", id))
-		b.WriteString("    }")
-	}
+	sort.Strings(embeddings)
 
-	// Relations
-	if (len(ifaces) > 0 || len(typs) > 0) && len(rels) > 0 {
+	if len(ifaces) > 0 && len(embeddings) > 0 {
 		b.WriteString("\n")
 	}
-	for _, rel := range rels {
+	for _, emb := range embeddings {
 		b.WriteString("\n")
-		writeRelation(&b, rel)
+		b.WriteString(emb)
 	}
 
 	// Style assignments
-	if len(ifaces) > 0 || len(typs) > 0 {
+	if len(ifaces) > 0 {
 		b.WriteString("\n")
 		for _, iface := range ifaces {
 			id := nodeID(iface.PkgName, iface.Name)
 			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" interfaceStyle", id))
-		}
-		for _, typ := range typs {
-			id := nodeID(typ.PkgName, typ.Name)
-			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" implStyle", id))
 		}
 	}
 
