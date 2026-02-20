@@ -2,6 +2,7 @@ package diagram
 
 import (
 	"fmt"
+	"go/types"
 	"sort"
 	"strings"
 
@@ -104,9 +105,9 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 	return sub
 }
 
-// generateOverviewMermaid produces a Mermaid classDiagram with all nodes but empty class bodies
-// (only <<interface>> tag, no methods). Includes init directive, classDef styles, cssClass
-// assignments, and all relation lines.
+// generateOverviewMermaid produces a Mermaid classDiagram showing only interface nodes
+// and interface-embedding arrows (--|>). No implementation blocks, no method bodies,
+// no implementation arrows (..|>). This creates a clean architectural map.
 func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	var b strings.Builder
 
@@ -120,40 +121,15 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 		return ifaces[i].Name < ifaces[j].Name
 	})
 
-	// Sort types deterministically
-	typs := make([]analyzer.TypeDef, len(result.Types))
-	copy(typs, result.Types)
-	sort.Slice(typs, func(i, j int) bool {
-		if typs[i].PkgName != typs[j].PkgName {
-			return typs[i].PkgName < typs[j].PkgName
-		}
-		return typs[i].Name < typs[j].Name
-	})
-
-	// Sort relations deterministically
-	rels := make([]analyzer.Relation, len(result.Relations))
-	copy(rels, result.Relations)
-	sort.Slice(rels, func(i, j int) bool {
-		typeKeyI := rels[i].Type.PkgName + "_" + rels[i].Type.Name
-		typeKeyJ := rels[j].Type.PkgName + "_" + rels[j].Type.Name
-		if typeKeyI != typeKeyJ {
-			return typeKeyI < typeKeyJ
-		}
-		ifaceKeyI := rels[i].Interface.PkgName + "_" + rels[i].Interface.Name
-		ifaceKeyJ := rels[j].Interface.PkgName + "_" + rels[j].Interface.Name
-		return ifaceKeyI < ifaceKeyJ
-	})
-
 	// Header + style definitions
 	if opts.IncludeInit {
 		b.WriteString("%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cccccc', 'primaryTextColor': '#000000', 'lineColor': '#555555'}}%%\n")
 	}
 	b.WriteString("classDiagram")
-	if len(ifaces) > 0 || len(typs) > 0 {
+	if len(ifaces) > 0 {
 		b.WriteString("\n")
 		b.WriteString("    direction LR\n")
-		b.WriteString("    classDef interfaceStyle fill:#2374ab,stroke:#1a5a8a,color:#fff,stroke-width:2px,font-weight:bold\n")
-		b.WriteString("    classDef implStyle fill:#4a9c6d,stroke:#357a50,color:#fff,stroke-width:2px")
+		b.WriteString("    classDef interfaceStyle fill:#2374ab,stroke:#1a5a8a,color:#fff,stroke-width:2px,font-weight:bold")
 	}
 
 	// Interface blocks — empty bodies with only <<interface>> tag
@@ -165,38 +141,67 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 		b.WriteString("    }")
 	}
 
-	// Type blocks — empty bodies
-	if len(ifaces) > 0 && len(typs) > 0 {
+	// Interface embedding arrows (--|>)
+	embeddings := collectEmbeddingArrows(ifaces)
+	if len(ifaces) > 0 && len(embeddings) > 0 {
 		b.WriteString("\n")
 	}
-	for _, typ := range typs {
-		id := nodeID(typ.PkgName, typ.Name)
+	for _, arrow := range embeddings {
 		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("    class %s {\n", id))
-		b.WriteString("    }")
-	}
-
-	// Relations
-	if (len(ifaces) > 0 || len(typs) > 0) && len(rels) > 0 {
-		b.WriteString("\n")
-	}
-	for _, rel := range rels {
-		b.WriteString("\n")
-		writeRelation(&b, rel)
+		b.WriteString(arrow)
 	}
 
-	// Style assignments
-	if len(ifaces) > 0 || len(typs) > 0 {
+	// Style assignments — interfaces only
+	if len(ifaces) > 0 {
 		b.WriteString("\n")
 		for _, iface := range ifaces {
 			id := nodeID(iface.PkgName, iface.Name)
 			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" interfaceStyle", id))
 		}
-		for _, typ := range typs {
-			id := nodeID(typ.PkgName, typ.Name)
-			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" implStyle", id))
-		}
 	}
 
 	return b.String()
+}
+
+// collectEmbeddingArrows detects interface embedding and returns sorted arrow lines.
+// For each interface with a non-nil TypeObj, it checks NumEmbeddeds() to find
+// which other interfaces in the result set it embeds.
+func collectEmbeddingArrows(ifaces []analyzer.InterfaceDef) []string {
+	// Build lookup: pkgPath.Name → InterfaceDef for all interfaces in the result
+	ifaceLookup := make(map[string]analyzer.InterfaceDef, len(ifaces))
+	for _, iface := range ifaces {
+		key := iface.PkgPath + "." + iface.Name
+		ifaceLookup[key] = iface
+	}
+
+	var arrows []string
+	for _, child := range ifaces {
+		if child.TypeObj == nil {
+			continue
+		}
+		for i := 0; i < child.TypeObj.NumEmbeddeds(); i++ {
+			embedded := child.TypeObj.EmbeddedType(i)
+			named, ok := embedded.(*types.Named)
+			if !ok {
+				continue
+			}
+			obj := named.Obj()
+			if obj.Pkg() == nil {
+				// Universe-scope type (e.g., error) — skip
+				continue
+			}
+			parentKey := obj.Pkg().Path() + "." + obj.Name()
+			if parent, exists := ifaceLookup[parentKey]; exists {
+				childID := nodeID(child.PkgName, child.Name)
+				parentID := nodeID(parent.PkgName, parent.Name)
+				// Skip self-embedding (shouldn't happen in valid Go, but guard)
+				if childID != parentID {
+					arrows = append(arrows, fmt.Sprintf("    %s --|> %s", childID, parentID))
+				}
+			}
+		}
+	}
+
+	sort.Strings(arrows)
+	return arrows
 }
