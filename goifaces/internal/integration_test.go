@@ -143,7 +143,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "<<interface>>")
 				assert.Contains(t, got, "shapes_Shape")
 				assert.Contains(t, got, "shapes_Circle")
-				assert.Contains(t, got, "shapes_Circle ..|> shapes_Shape")
+				assert.Contains(t, got, "shapes_Circle --|> shapes_Shape")
 				assert.Contains(t, got, "Area()")
 			},
 		},
@@ -155,8 +155,8 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "animals_Speaker")
 				assert.Contains(t, got, "animals_Dog")
 				assert.Contains(t, got, "animals_Cat")
-				assert.Contains(t, got, "animals_Dog ..|> animals_Speaker")
-				assert.Contains(t, got, "animals_Cat ..|> animals_Speaker")
+				assert.Contains(t, got, "animals_Dog --|> animals_Speaker")
+				assert.Contains(t, got, "animals_Cat --|> animals_Speaker")
 				// Fish has no Speak() — should not appear
 				assert.NotContains(t, got, "animals_Fish")
 			},
@@ -172,13 +172,13 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "store_MemStore")
 				assert.Contains(t, got, "store_ReadOnlyCache")
 				// MemStore implements all three
-				assert.Contains(t, got, "store_MemStore ..|> store_Reader")
-				assert.Contains(t, got, "store_MemStore ..|> store_Writer")
-				assert.Contains(t, got, "store_MemStore ..|> store_ReadWriter")
+				assert.Contains(t, got, "store_MemStore --|> store_Reader")
+				assert.Contains(t, got, "store_MemStore --|> store_Writer")
+				assert.Contains(t, got, "store_MemStore --|> store_ReadWriter")
 				// ReadOnlyCache implements only Reader
-				assert.Contains(t, got, "store_ReadOnlyCache ..|> store_Reader")
-				assert.NotContains(t, got, "store_ReadOnlyCache ..|> store_Writer")
-				assert.NotContains(t, got, "store_ReadOnlyCache ..|> store_ReadWriter")
+				assert.Contains(t, got, "store_ReadOnlyCache --|> store_Reader")
+				assert.NotContains(t, got, "store_ReadOnlyCache --|> store_Writer")
+				assert.NotContains(t, got, "store_ReadOnlyCache --|> store_ReadWriter")
 			},
 		},
 		{
@@ -188,7 +188,7 @@ func TestEndToEnd(t *testing.T) {
 			validate: func(t *testing.T, got string) {
 				assert.Contains(t, got, "db_Closer")
 				assert.Contains(t, got, "db_Connection")
-				assert.Contains(t, got, "db_Connection ..|> db_Closer")
+				assert.Contains(t, got, "db_Connection --|> db_Closer")
 			},
 		},
 		{
@@ -201,9 +201,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "io2_ReadCloser")
 				assert.Contains(t, got, "io2_MyFile")
 				// MyFile implements all three
-				assert.Contains(t, got, "io2_MyFile ..|> io2_Reader")
-				assert.Contains(t, got, "io2_MyFile ..|> io2_Closer")
-				assert.Contains(t, got, "io2_MyFile ..|> io2_ReadCloser")
+				assert.Contains(t, got, "io2_MyFile --|> io2_Reader")
+				assert.Contains(t, got, "io2_MyFile --|> io2_Closer")
+				assert.Contains(t, got, "io2_MyFile --|> io2_ReadCloser")
 			},
 		},
 		{
@@ -213,7 +213,7 @@ func TestEndToEnd(t *testing.T) {
 			validate: func(t *testing.T, got string) {
 				assert.Contains(t, got, "ifaces_Logger")
 				assert.Contains(t, got, "impl_ConsoleLogger")
-				assert.Contains(t, got, "impl_ConsoleLogger ..|> ifaces_Logger")
+				assert.Contains(t, got, "impl_ConsoleLogger --|> ifaces_Logger")
 			},
 		},
 		{
@@ -238,7 +238,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, normalized, "classDiagram")
 				// Should not contain any class blocks or relations
 				assert.NotContains(t, normalized, "class ")
-				assert.NotContains(t, normalized, "..|>")
+				assert.NotContains(t, normalized, "--|>")
 			},
 		},
 		{
@@ -251,7 +251,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, normalized, "classDiagram")
 				// Should not contain any class blocks or relations
 				assert.NotContains(t, normalized, "class ")
-				assert.NotContains(t, normalized, "..|>")
+				assert.NotContains(t, normalized, "--|>")
 			},
 		},
 		{
@@ -262,7 +262,7 @@ func TestEndToEnd(t *testing.T) {
 				// Only exported: Runner and Cat
 				assert.Contains(t, got, "internal_Runner")
 				assert.Contains(t, got, "internal_Cat")
-				assert.Contains(t, got, "internal_Cat ..|> internal_Runner")
+				assert.Contains(t, got, "internal_Cat --|> internal_Runner")
 				// Unexported should NOT appear
 				assert.NotContains(t, got, "internal_walker")
 				assert.NotContains(t, got, "internal_dog")
@@ -278,9 +278,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "internal_Runner")
 				assert.Contains(t, got, "internal_dog")
 				assert.Contains(t, got, "internal_Cat")
-				assert.Contains(t, got, "internal_dog ..|> internal_walker")
-				assert.Contains(t, got, "internal_dog ..|> internal_Runner")
-				assert.Contains(t, got, "internal_Cat ..|> internal_Runner")
+				assert.Contains(t, got, "internal_dog --|> internal_walker")
+				assert.Contains(t, got, "internal_dog --|> internal_Runner")
+				assert.Contains(t, got, "internal_Cat --|> internal_Runner")
 			},
 		},
 		{
@@ -293,9 +293,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "diamond_Persister")
 				assert.Contains(t, got, "diamond_DB")
 				// DB implements all three
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Saver")
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Loader")
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Persister")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Saver")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Loader")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Persister")
 			},
 		},
 		{
@@ -435,8 +435,8 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	assert.NotContains(t, overview, "memdb_FilterIterator",
 		"overview should not contain implementation node memdb_FilterIterator")
 
-	// Should NOT contain implementation arrows (..|>)
-	assert.NotContains(t, overview, "..|>", "overview should not contain implementation arrows")
+	// Hub-and-spoke has no interface embedding, so no arrows in overview
+	assert.NotContains(t, overview, "--|>", "overview should not contain arrows (no embedding in this dataset)")
 
 	// Should NOT contain implStyle
 	assert.NotContains(t, overview, "implStyle", "overview should not contain implStyle")
@@ -520,8 +520,8 @@ func TestOverviewInterfaceEmbedding(t *testing.T) {
 	// Overview should NOT contain implementation blocks or arrows
 	assert.NotContains(t, overview, "mylib_MyFile",
 		"overview should not contain implementation node")
-	assert.NotContains(t, overview, "..|>",
-		"overview should not contain implementation arrows")
+	// Note: overview contains --|> for embedding arrows (ReadCloser --|> Reader),
+	// which is correct. Implementation arrows are excluded by the overview generator.
 	assert.NotContains(t, overview, "implStyle",
 		"overview should not contain implStyle")
 

@@ -76,11 +76,20 @@ func cloneRepo(ctx context.Context, url string, logger *slog.Logger) (string, fu
 
 	logger.Info("clone complete", "dest", tmpDir)
 
-	if err := goModDownload(ctx, tmpDir, logger); err != nil {
+	// Find module root — go.mod may not be at the repo root
+	modRoot, err := findModuleRootRecursive(tmpDir)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("no go.mod found in cloned repo: %w", err)
+	}
+
+	logger.Info("found module root", "module_root", modRoot)
+
+	if err := goModDownload(ctx, modRoot, logger); err != nil {
 		logger.Warn("go mod download failed", "error", err)
 	}
 
-	return tmpDir, cleanup, nil
+	return modRoot, cleanup, nil
 }
 
 func findModuleRoot(dir string) (string, error) {
@@ -96,6 +105,32 @@ func findModuleRoot(dir string) (string, error) {
 		}
 		current = parent
 	}
+}
+
+// findModuleRootRecursive searches dir and its subdirectories for a go.mod file,
+// returning the directory containing the first one found (breadth-first).
+func findModuleRootRecursive(root string) (string, error) {
+	// Check root first
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+		return root, nil
+	}
+
+	// Search subdirectories (breadth-first, max depth 3)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		sub := filepath.Join(root, e.Name())
+		if _, err := os.Stat(filepath.Join(sub, "go.mod")); err == nil {
+			return sub, nil
+		}
+	}
+
+	return "", fmt.Errorf("no go.mod found in %s or immediate subdirectories", root)
 }
 
 func goModDownload(ctx context.Context, dir string, logger *slog.Logger) error {

@@ -107,7 +107,7 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 
 // generateOverviewMermaid produces a Mermaid classDiagram showing only interface nodes
 // and interface-embedding arrows (--|>). No implementation blocks, no method bodies,
-// no implementation arrows (..|>). This creates a clean architectural map.
+// no implementation arrows. This creates a clean architectural map.
 func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	var b strings.Builder
 
