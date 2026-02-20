@@ -105,9 +105,9 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 	return sub
 }
 
-// generateOverviewMermaid produces a Mermaid classDiagram showing only interface nodes
-// and interface-embedding arrows (--|>). No implementation blocks, no method bodies,
-// no implementation arrows. This creates a clean architectural map.
+// generateOverviewMermaid produces a Mermaid classDiagram showing only interface
+// nodes and interface→interface embedding arrows. Implementation blocks and
+// type→interface relation arrows are omitted — those appear on the detail slides.
 func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	var b strings.Builder
 
@@ -141,17 +141,17 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 		b.WriteString("    }")
 	}
 
-	// Interface embedding arrows (--|>)
-	embeddings := collectEmbeddingArrows(ifaces)
-	if len(ifaces) > 0 && len(embeddings) > 0 {
+	// Interface→interface embedding arrows
+	embeddingArrows := collectEmbeddingArrows(ifaces)
+	if len(ifaces) > 0 && len(embeddingArrows) > 0 {
 		b.WriteString("\n")
 	}
-	for _, arrow := range embeddings {
+	for _, arrow := range embeddingArrows {
 		b.WriteString("\n")
 		b.WriteString(arrow)
 	}
 
-	// Style assignments — interfaces only
+	// Style assignments (interfaces only)
 	if len(ifaces) > 0 {
 		b.WriteString("\n")
 		for _, iface := range ifaces {
@@ -163,41 +163,49 @@ func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) strin
 	return b.String()
 }
 
-// collectEmbeddingArrows detects interface embedding and returns sorted arrow lines.
-// For each interface with a non-nil TypeObj, it checks NumEmbeddeds() to find
-// which other interfaces in the result set it embeds.
+// collectEmbeddingArrows detects interface→interface embedding relationships
+// and returns sorted Mermaid arrow lines (e.g. "    child --|> parent").
 func collectEmbeddingArrows(ifaces []analyzer.InterfaceDef) []string {
-	// Build lookup: pkgPath.Name → InterfaceDef for all interfaces in the result
+	// Build lookup: "pkgPath.Name" → InterfaceDef
 	ifaceLookup := make(map[string]analyzer.InterfaceDef, len(ifaces))
 	for _, iface := range ifaces {
 		key := iface.PkgPath + "." + iface.Name
 		ifaceLookup[key] = iface
 	}
 
+	seen := make(map[string]struct{})
 	var arrows []string
-	for _, child := range ifaces {
-		if child.TypeObj == nil {
+	for _, iface := range ifaces {
+		if iface.TypeObj == nil {
 			continue
 		}
-		for i := 0; i < child.TypeObj.NumEmbeddeds(); i++ {
-			embedded := child.TypeObj.EmbeddedType(i)
+		for i := 0; i < iface.TypeObj.NumEmbeddeds(); i++ {
+			embedded := iface.TypeObj.EmbeddedType(i)
+			// Only process *types.Named embeddings — anonymous interface
+			// embeddings, union constraints, and type params have no
+			// corresponding node in the diagram.
 			named, ok := embedded.(*types.Named)
 			if !ok {
 				continue
 			}
-			obj := named.Obj()
-			if obj.Pkg() == nil {
-				// Universe-scope type (e.g., error) — skip
-				continue
+			pkg := named.Obj().Pkg()
+			if pkg == nil {
+				continue // universe-scope types like error
 			}
-			parentKey := obj.Pkg().Path() + "." + obj.Name()
-			if parent, exists := ifaceLookup[parentKey]; exists {
-				childID := nodeID(child.PkgName, child.Name)
-				parentID := nodeID(parent.PkgName, parent.Name)
-				// Skip self-embedding (shouldn't happen in valid Go, but guard)
-				if childID != parentID {
-					arrows = append(arrows, fmt.Sprintf("    %s --|> %s", childID, parentID))
-				}
+			parentKey := pkg.Path() + "." + named.Obj().Name()
+			parent, exists := ifaceLookup[parentKey]
+			if !exists {
+				continue // embedded interface not in our result set
+			}
+			childID := nodeID(iface.PkgName, iface.Name)
+			parentID := nodeID(parent.PkgName, parent.Name)
+			if childID == parentID {
+				continue // guard against self-embedding
+			}
+			arrow := fmt.Sprintf("    %s --|> %s", childID, parentID)
+			if _, dup := seen[arrow]; !dup {
+				seen[arrow] = struct{}{}
+				arrows = append(arrows, arrow)
 			}
 		}
 	}
