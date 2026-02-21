@@ -2,7 +2,6 @@ package internal_test
 
 import (
 	"context"
-	"go/types"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -400,9 +399,9 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	slideOpts := diagram.SlideOptions{Threshold: 20}
 	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
 
-	// Slide 0 = overview + 4 detail slides = 5 total
-	require.Equal(t, 5, len(slides), "expected 5 slides (1 overview + 4 detail): 17 nodes < 20 but 38 relations >= 20")
-	assert.Equal(t, "Overview", slides[0].Title)
+	// Slide 0 = package map + 4 detail slides = 5 total
+	require.Equal(t, 5, len(slides), "expected 5 slides (1 package map + 4 detail): 17 nodes < 20 but 38 relations >= 20")
+	assert.Equal(t, "Package Map", slides[0].Title)
 
 	// Each detail slide should contain hub interfaces
 	hubNames := []string{"memdb_Indexer", "memdb_MultiIndexer", "memdb_SingleIndexer", "memdb_PrefixIndexer"}
@@ -425,61 +424,26 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	assert.Contains(t, filterSlide, "memdb_ResultIterator",
 		"ResultIterator should be on same slide as FilterIterator")
 
-	// Overview should only contain interface nodes, no impl nodes or impl arrows
-	overview := slides[0].Mermaid
-	assert.NotContains(t, overview, "+", "overview should have no method lines")
-	assert.NotContains(t, overview, "..|>", "overview should have no implementation arrows")
-	assert.NotContains(t, overview, "implStyle", "overview should have no implStyle")
-
-	// Verify no implementation type nodes appear in overview
-	for _, name := range fieldIndexTypes {
-		assert.NotContains(t, overview, "memdb_"+name,
-			"overview should not contain implementation type %s", name)
-	}
-	assert.NotContains(t, overview, "memdb_FilterIterator",
-		"overview should not contain implementation type FilterIterator")
-
-	// Verify interface nodes DO appear in overview
-	for _, iface := range ifaces {
-		assert.Contains(t, overview, "memdb_"+iface.Name,
-			"overview should contain interface %s", iface.Name)
-	}
+	// Package map should be a flowchart showing package hierarchy
+	pkgMap := slides[0].Mermaid
+	assert.Contains(t, pkgMap, "flowchart LR", "package map should be a flowchart")
+	assert.Contains(t, pkgMap, "memdb", "package map should show memdb package")
+	assert.Contains(t, pkgMap, "ifaces", "package map should show interface count")
+	assert.Contains(t, pkgMap, "types", "package map should show type count")
 }
 
-func TestOverviewInterfaceEmbedding(t *testing.T) {
-	// Create a synthetic package for interface types
-	pkg := types.NewPackage("example.com/io2", "io2")
-
-	// Create Reader interface: Read() method
-	readSig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
-	readFunc := types.NewFunc(0, pkg, "Read", readSig)
-	readerIface := types.NewInterfaceType([]*types.Func{readFunc}, nil)
-	readerIface.Complete()
-	readerNamed := types.NewNamed(types.NewTypeName(0, pkg, "Reader", nil), readerIface, nil)
-
-	// Create Closer interface: Close() method
-	closeSig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
-	closeFunc := types.NewFunc(0, pkg, "Close", closeSig)
-	closerIface := types.NewInterfaceType([]*types.Func{closeFunc}, nil)
-	closerIface.Complete()
-	closerNamed := types.NewNamed(types.NewTypeName(0, pkg, "Closer", nil), closerIface, nil)
-
-	// Create ReadCloser interface: embeds Reader and Closer
-	readCloserIface := types.NewInterfaceType(nil, []types.Type{readerNamed, closerNamed})
-	readCloserIface.Complete()
-
-	// Build InterfaceDefs
+func TestPackageMapMultiPackage(t *testing.T) {
+	// Create a result with types from multiple packages
 	ifaces := []analyzer.InterfaceDef{
-		{Name: "Reader", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readerIface},
-		{Name: "Closer", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: closerIface},
-		{Name: "ReadCloser", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readCloserIface},
+		{Name: "Reader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Writer", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Handler", PkgPath: "example.com/mylib/http", PkgName: "http"},
 	}
-
-	// Add a concrete type so slides activate (need enough nodes/relations)
 	typs := []analyzer.TypeDef{
-		{Name: "MyFile", PkgPath: "example.com/io2", PkgName: "io2"},
+		{Name: "FileReader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Server", PkgPath: "example.com/mylib/http", PkgName: "http"},
+		{Name: "Router", PkgPath: "example.com/mylib/http/router", PkgName: "router"},
 	}
-	// Many relations to trigger splitting
 	var rels []analyzer.Relation
 	for i := range ifaces {
 		rels = append(rels, analyzer.Relation{
@@ -496,27 +460,21 @@ func TestOverviewInterfaceEmbedding(t *testing.T) {
 
 	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
 	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 3})
-	// Use threshold=1 to force slides
 	slideOpts := diagram.SlideOptions{Threshold: 1}
 	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
 
-	require.GreaterOrEqual(t, len(slides), 2, "should have overview + detail slides")
-	overview := slides[0].Mermaid
+	require.GreaterOrEqual(t, len(slides), 2, "should have package map + detail slides")
+	pkgMap := slides[0].Mermaid
 
-	// Overview should contain interface nodes
-	assert.Contains(t, overview, "io2_Reader")
-	assert.Contains(t, overview, "io2_Closer")
-	assert.Contains(t, overview, "io2_ReadCloser")
+	assert.Equal(t, "Package Map", slides[0].Title)
+	assert.Contains(t, pkgMap, "flowchart LR", "package map should be a flowchart")
 
-	// Overview should contain embedding arrows (ReadCloser --|> Reader, ReadCloser --|> Closer)
-	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Reader",
-		"overview should show ReadCloser extends Reader")
-	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Closer",
-		"overview should show ReadCloser extends Closer")
+	// Should show packages
+	assert.Contains(t, pkgMap, "io", "should contain io package")
+	assert.Contains(t, pkgMap, "http", "should contain http package")
+	assert.Contains(t, pkgMap, "router", "should contain router subpackage")
 
-	// Overview should NOT contain implementation nodes or arrows
-	assert.NotContains(t, overview, "io2_MyFile",
-		"overview should not contain implementation types")
-	assert.NotContains(t, overview, "..|>",
-		"overview should not contain implementation arrows")
+	// Should show counts
+	assert.Contains(t, pkgMap, "2 ifaces", "io should show 2 interfaces")
+	assert.Contains(t, pkgMap, "1 ifaces", "http should show 1 interface")
 }
