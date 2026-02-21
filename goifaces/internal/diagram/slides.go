@@ -44,7 +44,7 @@ func BuildSlides(result *analyzer.Result, diagOpts DiagramOptions, splitter spli
 	// Slide 0: package map — shows repository package hierarchy
 	slides = append(slides, Slide{
 		Title:   "Package Map",
-		Mermaid: generatePackageMapMermaid(result, diagOpts),
+		Mermaid: GeneratePackageMapMermaid(result, diagOpts),
 	})
 
 	// Detail slides from splitter groups
@@ -165,10 +165,10 @@ type pkgStats struct {
 	Types      int
 }
 
-// generatePackageMapMermaid produces a Mermaid flowchart showing the repository's
+// GeneratePackageMapMermaid produces a Mermaid flowchart showing the repository's
 // package hierarchy. Each package is a node displaying its name and counts of
 // interfaces and types. Packages with subpackages are rendered as subgraphs.
-func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) string {
+func GeneratePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	// Collect stats per package path
 	stats := make(map[string]*pkgStats)
 	for _, iface := range result.Interfaces {

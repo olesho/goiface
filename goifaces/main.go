@@ -14,7 +14,6 @@ import (
 
 	"github.com/olehluchkiv/goifaces/internal/analyzer"
 	"github.com/olehluchkiv/goifaces/internal/diagram"
-	"github.com/olehluchkiv/goifaces/internal/diagram/split"
 	"github.com/olehluchkiv/goifaces/internal/enricher"
 	"github.com/olehluchkiv/goifaces/internal/enricher/llm"
 	"github.com/olehluchkiv/goifaces/internal/logging"
@@ -39,9 +38,6 @@ func main() {
 	noBrowser := fs.Bool("no-browser", false, "skip auto-opening browser")
 	logFile := fs.String("log-file", "logs/goifaces.log", "log file path")
 	logLevel := fs.String("log-level", "info", "log level (debug, info, warn, error)")
-	slideThreshold := fs.Int("slide-threshold", 20, "node count above which slide mode activates")
-	hubThreshold := fs.Int("hub-threshold", 3, "min connections for an interface to be a hub (repeated on every slide)")
-	chunkSize := fs.Int("chunk-size", 3, "max implementations per detail slide")
 	enrichFlag := fs.Bool("enrich", false, "enable LLM-backed enrichment (requires GOIFACES_LLM_API_KEY env var)")
 
 	if err := fs.Parse(flags); err != nil {
@@ -166,16 +162,15 @@ func main() {
 		}
 		fmt.Printf("Wrote diagram to %s\n", *output)
 	} else {
-		// Server mode: use slides
-		slideOpts := diagram.SlideOptions{Threshold: *slideThreshold}
-		splitOpts := split.Options{HubThreshold: *hubThreshold, ChunkSize: *chunkSize}
-		splitter := split.NewHubAndSpoke(splitOpts)
-		slides := diagram.BuildSlides(result, diagramOpts, splitter, slideOpts)
-		fmt.Printf("Built %d slide(s)\n", len(slides))
+		// Server mode: interactive tabbed UI
+		pkgMapMermaid := diagram.GeneratePackageMapMermaid(result, diagramOpts)
+		interactiveData := diagram.PrepareInteractiveData(result, diagramOpts)
+		interactiveData.PackageMapMermaid = pkgMapMermaid
+		interactiveData.RepoAddress = input
 
 		openBrowser := !*noBrowser
 		fmt.Printf("Starting server on http://localhost:%d\n", *port)
-		if err := server.ServeSlides(ctx, slides, input, *port, openBrowser, logger); err != nil {
+		if err := server.ServeInteractive(ctx, interactiveData, *port, openBrowser, logger); err != nil {
 			logger.Error("server error", "error", err)
 			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 			os.Exit(1)
@@ -191,7 +186,6 @@ func reorderArgs(args []string) (flags, positional []string) {
 	valueFlagSet := map[string]bool{
 		"-path": true, "-port": true, "-filter": true,
 		"-output": true, "-log-file": true, "-log-level": true,
-		"-slide-threshold": true, "-hub-threshold": true, "-chunk-size": true,
 	}
 
 	for i := 0; i < len(args); i++ {

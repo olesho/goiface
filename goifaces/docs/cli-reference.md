@@ -24,9 +24,6 @@ The first positional argument is the Go code to analyze. Can be:
 | `-no-browser` | bool | `false` | Don't auto-open browser when starting server |
 | `-log-file` | string | `logs/goifaces.log` | Path to JSONL log file |
 | `-log-level` | string | `info` | Log level: debug, info, warn, error |
-| `-slide-threshold` | int | `20` | Node count above which slide mode activates |
-| `-hub-threshold` | int | `3` | Min connections for an interface to be a hub (repeated on every slide) |
-| `-chunk-size` | int | `3` | Max implementations per detail slide |
 | `-enrich` | bool | `false` | Enable LLM-backed enrichment (semantic grouping, pattern detection, intelligent simplification) |
 
 ### Environment Variables (for `-enrich`)
@@ -60,9 +57,6 @@ goifaces ./my-project -log-level debug
 
 # Filter to specific packages
 goifaces ./my-project -filter github.com/user/repo/internal
-
-# Control slide splitting for large diagrams
-goifaces https://github.com/hashicorp/go-memdb -hub-threshold 3 -chunk-size 4
 
 # Enable LLM enrichment (requires API key)
 GOIFACES_LLM_API_KEY=sk-... goifaces ./my-project -enrich
