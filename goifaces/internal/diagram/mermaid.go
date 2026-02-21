@@ -185,7 +185,7 @@ func writeMethodLines(b *strings.Builder, methods []MethodSig, opts DiagramOptio
 func writeRelation(b *strings.Builder, rel analyzer.Relation) {
 	typeID := nodeID(rel.Type.PkgName, rel.Type.Name)
 	ifaceID := nodeID(rel.Interface.PkgName, rel.Interface.Name)
-	line := fmt.Sprintf("    %s ..|> %s", typeID, ifaceID)
+	line := fmt.Sprintf("    %s --|> %s", typeID, ifaceID)
 	b.WriteString(line)
 }
 

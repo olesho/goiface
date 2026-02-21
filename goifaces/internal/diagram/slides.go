@@ -2,7 +2,6 @@ package diagram
 
 import (
 	"fmt"
-	"go/types"
 	"sort"
 	"strings"
 
@@ -42,10 +41,10 @@ func BuildSlides(result *analyzer.Result, diagOpts DiagramOptions, splitter spli
 
 	var slides []Slide
 
-	// Slide 0: overview — all nodes, no methods
+	// Slide 0: package map — shows repository package hierarchy
 	slides = append(slides, Slide{
-		Title:   "Overview",
-		Mermaid: generateOverviewMermaid(result, diagOpts),
+		Title:   "Package Map",
+		Mermaid: generatePackageMapMermaid(result, diagOpts),
 	})
 
 	// Detail slides from splitter groups
@@ -122,95 +121,177 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 	return sub
 }
 
-// generateOverviewMermaid produces a Mermaid classDiagram showing only interface nodes
-// and interface embedding/extension arrows (--|>). Implementation blocks and implementation
-// arrows (..|>) are omitted — they appear only on detail slides.
-func generateOverviewMermaid(result *analyzer.Result, opts DiagramOptions) string {
+// pkgStats holds per-package counts for the package map.
+type pkgStats struct {
+	Interfaces int
+	Types      int
+}
+
+// generatePackageMapMermaid produces a Mermaid flowchart showing the repository's
+// package hierarchy. Each package is a node displaying its name and counts of
+// interfaces and types. Packages with subpackages are rendered as subgraphs.
+func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) string {
+	// Collect stats per package path
+	stats := make(map[string]*pkgStats)
+	for _, iface := range result.Interfaces {
+		s, ok := stats[iface.PkgPath]
+		if !ok {
+			s = &pkgStats{}
+			stats[iface.PkgPath] = s
+		}
+		s.Interfaces++
+	}
+	for _, typ := range result.Types {
+		s, ok := stats[typ.PkgPath]
+		if !ok {
+			s = &pkgStats{}
+			stats[typ.PkgPath] = s
+		}
+		s.Types++
+	}
+
+	if len(stats) == 0 {
+		return "flowchart LR"
+	}
+
+	// Collect and sort package paths
+	var paths []string
+	for p := range stats {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	// Find common prefix to strip (module path)
+	prefix := longestCommonPrefix(paths)
+	// Trim to last slash to get module root
+	if idx := strings.LastIndex(prefix, "/"); idx >= 0 {
+		prefix = prefix[:idx+1]
+	}
+
+	// Build tree
+	root := &pkgNode{children: make(map[string]*pkgNode)}
+	for _, p := range paths {
+		rel := strings.TrimPrefix(p, prefix)
+		if rel == "" {
+			rel = lastSegment(p)
+		}
+		parts := strings.Split(rel, "/")
+		insertNode(root, parts, p, stats[p])
+	}
+
 	var b strings.Builder
-
-	// Sort interfaces deterministically
-	ifaces := make([]analyzer.InterfaceDef, len(result.Interfaces))
-	copy(ifaces, result.Interfaces)
-	sort.Slice(ifaces, func(i, j int) bool {
-		if ifaces[i].PkgName != ifaces[j].PkgName {
-			return ifaces[i].PkgName < ifaces[j].PkgName
-		}
-		return ifaces[i].Name < ifaces[j].Name
-	})
-
-	// Build lookup of interfaces by (pkgPath, name) for embedding detection
-	type ifaceKey struct{ pkgPath, name string }
-	ifaceLookup := make(map[ifaceKey]analyzer.InterfaceDef, len(ifaces))
-	for _, iface := range ifaces {
-		ifaceLookup[ifaceKey{iface.PkgPath, iface.Name}] = iface
-	}
-
-	// Header + style definitions
 	if opts.IncludeInit {
-		b.WriteString("%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cccccc', 'primaryTextColor': '#000000', 'lineColor': '#555555'}}%%\n")
+		b.WriteString("%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryBorderColor': '#cccccc', 'primaryTextColor': '#000000', 'lineColor': '#555555'}}}%%\n")
 	}
-	b.WriteString("classDiagram")
-	if len(ifaces) > 0 {
-		b.WriteString("\n")
-		b.WriteString("    direction LR\n")
-		b.WriteString("    classDef interfaceStyle fill:#2374ab,stroke:#1a5a8a,color:#fff,stroke-width:2px,font-weight:bold")
-	}
+	b.WriteString("flowchart LR")
 
-	// Interface blocks — empty bodies with only <<interface>> tag
-	for _, iface := range ifaces {
-		id := nodeID(iface.PkgName, iface.Name)
-		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("    class %s {\n", id))
-		b.WriteString("        <<interface>>\n")
-		b.WriteString("    }")
-	}
-
-	// Embedding relations: interface --|> interface (solid + triangle for inheritance)
-	var embeddings []string
-	for _, iface := range ifaces {
-		if iface.TypeObj == nil {
-			continue
-		}
-		childID := nodeID(iface.PkgName, iface.Name)
-		for i := 0; i < iface.TypeObj.NumEmbeddeds(); i++ {
-			embedded := iface.TypeObj.EmbeddedType(i)
-			named, ok := embedded.(*types.Named)
-			if !ok {
-				continue
-			}
-			obj := named.Obj()
-			if obj.Pkg() == nil {
-				continue // universe-scope type like error
-			}
-			parent, exists := ifaceLookup[ifaceKey{obj.Pkg().Path(), obj.Name()}]
-			if !exists {
-				continue // embedded interface not in our result set
-			}
-			parentID := nodeID(parent.PkgName, parent.Name)
-			if childID == parentID {
-				continue // guard against self-embedding
-			}
-			embeddings = append(embeddings, fmt.Sprintf("    %s --|> %s", childID, parentID))
-		}
-	}
-	sort.Strings(embeddings)
-
-	if len(ifaces) > 0 && len(embeddings) > 0 {
-		b.WriteString("\n")
-	}
-	for _, emb := range embeddings {
-		b.WriteString("\n")
-		b.WriteString(emb)
-	}
-
-	// Style assignments
-	if len(ifaces) > 0 {
-		b.WriteString("\n")
-		for _, iface := range ifaces {
-			id := nodeID(iface.PkgName, iface.Name)
-			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" interfaceStyle", id))
-		}
-	}
+	renderTree(&b, root, 1)
 
 	return b.String()
+}
+
+// pkgNode represents a node in the package hierarchy tree.
+type pkgNode struct {
+	name     string    // segment name (e.g. "api")
+	pkgPath  string    // full package path (only set for leaf/actual packages)
+	stats    *pkgStats // non-nil for actual packages
+	children map[string]*pkgNode
+}
+
+func insertNode(parent *pkgNode, parts []string, fullPath string, s *pkgStats) {
+	if len(parts) == 0 {
+		return
+	}
+	name := parts[0]
+	child, ok := parent.children[name]
+	if !ok {
+		child = &pkgNode{name: name, children: make(map[string]*pkgNode)}
+		parent.children[name] = child
+	}
+	if len(parts) == 1 {
+		child.pkgPath = fullPath
+		child.stats = s
+	} else {
+		insertNode(child, parts[1:], fullPath, s)
+	}
+}
+
+func renderTree(b *strings.Builder, node *pkgNode, depth int) {
+	// Sort children for deterministic output
+	var names []string
+	for name := range node.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	indent := strings.Repeat("    ", depth)
+
+	for _, name := range names {
+		child := node.children[name]
+		id := sanitizeID(child.pkgPath)
+		if id == "" {
+			id = "pkg_" + sanitizeID(name)
+		}
+
+		hasChildren := len(child.children) > 0
+
+		if hasChildren {
+			// Render as subgraph with nested children
+			b.WriteString(fmt.Sprintf("\n%ssubgraph %s[\"%s\"]", indent, id, name))
+
+			// If this node itself is a package (has stats), add a summary node inside
+			if child.stats != nil {
+				innerID := id + "__self"
+				label := formatPkgLabel(name, child.stats)
+				b.WriteString(fmt.Sprintf("\n%s    %s[\"%s\"]", indent, innerID, label))
+			}
+
+			renderTree(b, child, depth+1)
+			b.WriteString(fmt.Sprintf("\n%send", indent))
+		} else {
+			// Leaf node
+			label := formatPkgLabel(name, child.stats)
+			b.WriteString(fmt.Sprintf("\n%s%s[\"%s\"]", indent, id, label))
+		}
+	}
+}
+
+func formatPkgLabel(name string, s *pkgStats) string {
+	if s == nil {
+		return name
+	}
+	var parts []string
+	if s.Interfaces > 0 {
+		parts = append(parts, fmt.Sprintf("%d ifaces", s.Interfaces))
+	}
+	if s.Types > 0 {
+		parts = append(parts, fmt.Sprintf("%d types", s.Types))
+	}
+	if len(parts) == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s\\n%s", name, strings.Join(parts, ", "))
+}
+
+func longestCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for !strings.HasPrefix(s, prefix) {
+			prefix = prefix[:len(prefix)-1]
+			if prefix == "" {
+				return ""
+			}
+		}
+	}
+	return prefix
+}
+
+func lastSegment(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
 }

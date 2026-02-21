@@ -2,8 +2,6 @@ package internal_test
 
 import (
 	"context"
-	"go/token"
-	"go/types"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +18,7 @@ import (
 
 // normalizeOutput sorts class definitions and relations alphabetically
 // to make comparison deterministic regardless of map iteration order.
+// Designed for full-diagram output from GenerateMermaid only.
 func normalizeOutput(s string) string {
 	s = strings.TrimSpace(s)
 	lines := strings.Split(s, "\n")
@@ -84,6 +83,10 @@ func normalizeOutput(s string) string {
 		} else if strings.Contains(trimmed, "..|>") || strings.Contains(trimmed, "--|>") {
 			relations = append(relations, line)
 			i++
+		} else if strings.HasPrefix(trimmed, "cssClass ") || strings.HasPrefix(trimmed, "classDef ") {
+			headerLines = append(headerLines, trimmed)
+			header = strings.Join(headerLines, "\n")
+			i++
 		} else {
 			i++
 		}
@@ -140,7 +143,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "<<interface>>")
 				assert.Contains(t, got, "shapes_Shape")
 				assert.Contains(t, got, "shapes_Circle")
-				assert.Contains(t, got, "shapes_Circle ..|> shapes_Shape")
+				assert.Contains(t, got, "shapes_Circle --|> shapes_Shape")
 				assert.Contains(t, got, "Area()")
 			},
 		},
@@ -152,8 +155,8 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "animals_Speaker")
 				assert.Contains(t, got, "animals_Dog")
 				assert.Contains(t, got, "animals_Cat")
-				assert.Contains(t, got, "animals_Dog ..|> animals_Speaker")
-				assert.Contains(t, got, "animals_Cat ..|> animals_Speaker")
+				assert.Contains(t, got, "animals_Dog --|> animals_Speaker")
+				assert.Contains(t, got, "animals_Cat --|> animals_Speaker")
 				// Fish has no Speak() — should not appear
 				assert.NotContains(t, got, "animals_Fish")
 			},
@@ -169,13 +172,13 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "store_MemStore")
 				assert.Contains(t, got, "store_ReadOnlyCache")
 				// MemStore implements all three
-				assert.Contains(t, got, "store_MemStore ..|> store_Reader")
-				assert.Contains(t, got, "store_MemStore ..|> store_Writer")
-				assert.Contains(t, got, "store_MemStore ..|> store_ReadWriter")
+				assert.Contains(t, got, "store_MemStore --|> store_Reader")
+				assert.Contains(t, got, "store_MemStore --|> store_Writer")
+				assert.Contains(t, got, "store_MemStore --|> store_ReadWriter")
 				// ReadOnlyCache implements only Reader
-				assert.Contains(t, got, "store_ReadOnlyCache ..|> store_Reader")
-				assert.NotContains(t, got, "store_ReadOnlyCache ..|> store_Writer")
-				assert.NotContains(t, got, "store_ReadOnlyCache ..|> store_ReadWriter")
+				assert.Contains(t, got, "store_ReadOnlyCache --|> store_Reader")
+				assert.NotContains(t, got, "store_ReadOnlyCache --|> store_Writer")
+				assert.NotContains(t, got, "store_ReadOnlyCache --|> store_ReadWriter")
 			},
 		},
 		{
@@ -185,7 +188,7 @@ func TestEndToEnd(t *testing.T) {
 			validate: func(t *testing.T, got string) {
 				assert.Contains(t, got, "db_Closer")
 				assert.Contains(t, got, "db_Connection")
-				assert.Contains(t, got, "db_Connection ..|> db_Closer")
+				assert.Contains(t, got, "db_Connection --|> db_Closer")
 			},
 		},
 		{
@@ -198,9 +201,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "io2_ReadCloser")
 				assert.Contains(t, got, "io2_MyFile")
 				// MyFile implements all three
-				assert.Contains(t, got, "io2_MyFile ..|> io2_Reader")
-				assert.Contains(t, got, "io2_MyFile ..|> io2_Closer")
-				assert.Contains(t, got, "io2_MyFile ..|> io2_ReadCloser")
+				assert.Contains(t, got, "io2_MyFile --|> io2_Reader")
+				assert.Contains(t, got, "io2_MyFile --|> io2_Closer")
+				assert.Contains(t, got, "io2_MyFile --|> io2_ReadCloser")
 			},
 		},
 		{
@@ -210,7 +213,7 @@ func TestEndToEnd(t *testing.T) {
 			validate: func(t *testing.T, got string) {
 				assert.Contains(t, got, "ifaces_Logger")
 				assert.Contains(t, got, "impl_ConsoleLogger")
-				assert.Contains(t, got, "impl_ConsoleLogger ..|> ifaces_Logger")
+				assert.Contains(t, got, "impl_ConsoleLogger --|> ifaces_Logger")
 			},
 		},
 		{
@@ -235,7 +238,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, normalized, "classDiagram")
 				// Should not contain any class blocks or relations
 				assert.NotContains(t, normalized, "class ")
-				assert.NotContains(t, normalized, "..|>")
+				assert.NotContains(t, normalized, "--|>")
 			},
 		},
 		{
@@ -248,7 +251,7 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, normalized, "classDiagram")
 				// Should not contain any class blocks or relations
 				assert.NotContains(t, normalized, "class ")
-				assert.NotContains(t, normalized, "..|>")
+				assert.NotContains(t, normalized, "--|>")
 			},
 		},
 		{
@@ -259,7 +262,7 @@ func TestEndToEnd(t *testing.T) {
 				// Only exported: Runner and Cat
 				assert.Contains(t, got, "internal_Runner")
 				assert.Contains(t, got, "internal_Cat")
-				assert.Contains(t, got, "internal_Cat ..|> internal_Runner")
+				assert.Contains(t, got, "internal_Cat --|> internal_Runner")
 				// Unexported should NOT appear
 				assert.NotContains(t, got, "internal_walker")
 				assert.NotContains(t, got, "internal_dog")
@@ -275,9 +278,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "internal_Runner")
 				assert.Contains(t, got, "internal_dog")
 				assert.Contains(t, got, "internal_Cat")
-				assert.Contains(t, got, "internal_dog ..|> internal_walker")
-				assert.Contains(t, got, "internal_dog ..|> internal_Runner")
-				assert.Contains(t, got, "internal_Cat ..|> internal_Runner")
+				assert.Contains(t, got, "internal_dog --|> internal_walker")
+				assert.Contains(t, got, "internal_dog --|> internal_Runner")
+				assert.Contains(t, got, "internal_Cat --|> internal_Runner")
 			},
 		},
 		{
@@ -290,9 +293,9 @@ func TestEndToEnd(t *testing.T) {
 				assert.Contains(t, got, "diamond_Persister")
 				assert.Contains(t, got, "diamond_DB")
 				// DB implements all three
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Saver")
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Loader")
-				assert.Contains(t, got, "diamond_DB ..|> diamond_Persister")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Saver")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Loader")
+				assert.Contains(t, got, "diamond_DB --|> diamond_Persister")
 			},
 		},
 		{
@@ -394,9 +397,9 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	slideOpts := diagram.SlideOptions{Threshold: 20}
 	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
 
-	// Slide 0 = overview + 4 detail slides = 5 total
-	require.Equal(t, 5, len(slides), "expected 5 slides (1 overview + 4 detail): 17 nodes < 20 but 38 relations >= 20")
-	assert.Equal(t, "Overview", slides[0].Title)
+	// Slide 0 = package map + 4 detail slides = 5 total
+	require.Equal(t, 5, len(slides), "expected 5 slides (1 package map + 4 detail): 17 nodes < 20 but 38 relations >= 20")
+	assert.Equal(t, "Package Map", slides[0].Title)
 
 	// Indexer, MultiIndexer, SingleIndexer connect to all 11 field-index types,
 	// so they should appear on every detail slide that has field-index types.
@@ -452,101 +455,59 @@ func TestHubAndSpokeSlides(t *testing.T) {
 		}
 	}
 
-	// Overview should show only interface nodes, no implementations
-	overview := slides[0].Mermaid
-	assert.NotContains(t, overview, "+", "overview should have no method lines")
-	assert.NotContains(t, overview, "..|>", "overview should have no implementation arrows")
-	assert.NotContains(t, overview, "implStyle", "overview should have no implStyle")
-
-	// Overview should contain interface nodes
-	assert.Contains(t, overview, "memdb_Indexer")
-	assert.Contains(t, overview, "memdb_MultiIndexer")
-	assert.Contains(t, overview, "memdb_SingleIndexer")
-	assert.Contains(t, overview, "memdb_PrefixIndexer")
-	assert.Contains(t, overview, "memdb_ResultIterator")
-
-	// Overview should NOT contain implementation nodes
-	assert.NotContains(t, overview, "memdb_BoolFieldIndex")
-	assert.NotContains(t, overview, "memdb_FilterIterator")
-	assert.NotContains(t, overview, "memdb_CompoundIndex")
+	// Package map should be a flowchart showing package hierarchy
+	pkgMap := slides[0].Mermaid
+	assert.Contains(t, pkgMap, "flowchart LR", "package map should be a flowchart")
+	assert.Contains(t, pkgMap, "memdb", "package map should show memdb package")
+	assert.Contains(t, pkgMap, "ifaces", "package map should show interface count")
+	assert.Contains(t, pkgMap, "types", "package map should show type count")
 }
 
-func TestOverviewInterfaceEmbedding(t *testing.T) {
-	// Build synthetic interfaces: ReadCloser embeds Reader and Closer
-	pkg := types.NewPackage("example.com/io2", "io2")
-
-	readMethod := types.NewFunc(token.NoPos, pkg, "Read",
-		types.NewSignatureType(nil, nil, nil,
-			types.NewTuple(types.NewVar(token.NoPos, pkg, "p", types.NewSlice(types.Typ[types.Byte]))),
-			types.NewTuple(
-				types.NewVar(token.NoPos, pkg, "", types.Typ[types.Int]),
-				types.NewVar(token.NoPos, pkg, "", types.Universe.Lookup("error").Type()),
-			),
-			false,
-		),
-	)
-	readerIface := types.NewInterfaceType([]*types.Func{readMethod}, nil)
-	readerIface.Complete()
-	readerNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Reader", nil), readerIface, nil)
-
-	closeMethod := types.NewFunc(token.NoPos, pkg, "Close",
-		types.NewSignatureType(nil, nil, nil,
-			nil,
-			types.NewTuple(types.NewVar(token.NoPos, pkg, "", types.Universe.Lookup("error").Type())),
-			false,
-		),
-	)
-	closerIface := types.NewInterfaceType([]*types.Func{closeMethod}, nil)
-	closerIface.Complete()
-	closerNamed := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Closer", nil), closerIface, nil)
-
-	// ReadCloser embeds Reader and Closer
-	readCloserIface := types.NewInterfaceType(nil, []types.Type{readerNamed, closerNamed})
-	readCloserIface.Complete()
-
+func TestPackageMapMultiPackage(t *testing.T) {
+	// Create a result with types from multiple packages
 	ifaces := []analyzer.InterfaceDef{
-		{Name: "Reader", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readerIface},
-		{Name: "Closer", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: closerIface},
-		{Name: "ReadCloser", PkgPath: "example.com/io2", PkgName: "io2", TypeObj: readCloserIface},
+		{Name: "Reader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Writer", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Handler", PkgPath: "example.com/mylib/http", PkgName: "http"},
 	}
-
-	// Add a type that implements ReadCloser (for detail slides)
-	implType := &analyzer.TypeDef{Name: "MyFile", PkgPath: "example.com/io2", PkgName: "io2"}
-	rels := []analyzer.Relation{
-		{Type: implType, Interface: &ifaces[0]},
-		{Type: implType, Interface: &ifaces[1]},
-		{Type: implType, Interface: &ifaces[2]},
+	typs := []analyzer.TypeDef{
+		{Name: "FileReader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+		{Name: "Server", PkgPath: "example.com/mylib/http", PkgName: "http"},
+		{Name: "Router", PkgPath: "example.com/mylib/http/router", PkgName: "router"},
+	}
+	var rels []analyzer.Relation
+	for i := range ifaces {
+		rels = append(rels, analyzer.Relation{
+			Type:      &typs[0],
+			Interface: &ifaces[i],
+		})
 	}
 
 	result := &analyzer.Result{
 		Interfaces: ifaces,
-		Types:      []analyzer.TypeDef{*implType},
+		Types:      typs,
 		Relations:  rels,
 	}
 
 	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
-	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 1, ChunkSize: 3})
-	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 3})
+	slideOpts := diagram.SlideOptions{Threshold: 1}
 	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
 
-	require.GreaterOrEqual(t, len(slides), 2, "should have at least overview + 1 detail slide")
-	assert.Equal(t, "Overview", slides[0].Title)
+	require.GreaterOrEqual(t, len(slides), 2, "should have package map + detail slides")
+	pkgMap := slides[0].Mermaid
 
-	overview := slides[0].Mermaid
+	assert.Equal(t, "Package Map", slides[0].Title)
+	assert.Contains(t, pkgMap, "flowchart LR", "package map should be a flowchart")
 
-	// Overview should contain interface nodes
-	assert.Contains(t, overview, "io2_Reader")
-	assert.Contains(t, overview, "io2_Closer")
-	assert.Contains(t, overview, "io2_ReadCloser")
+	// Should show packages
+	assert.Contains(t, pkgMap, "io", "should contain io package")
+	assert.Contains(t, pkgMap, "http", "should contain http package")
+	assert.Contains(t, pkgMap, "router", "should contain router subpackage")
 
-	// Overview should contain embedding arrows (--|>)
-	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Closer", "ReadCloser should embed Closer")
-	assert.Contains(t, overview, "io2_ReadCloser --|> io2_Reader", "ReadCloser should embed Reader")
-
-	// Overview should NOT contain implementation nodes or arrows
-	assert.NotContains(t, overview, "io2_MyFile", "overview should not have implementation nodes")
-	assert.NotContains(t, overview, "..|>", "overview should not have implementation arrows")
-	assert.NotContains(t, overview, "implStyle", "overview should not have implStyle")
+	// Should show counts
+	assert.Contains(t, pkgMap, "2 ifaces", "io should show 2 interfaces")
+	assert.Contains(t, pkgMap, "1 ifaces", "http should show 1 interface")
 }
 
 func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
@@ -591,10 +552,10 @@ func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
 
 	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
 
-	// Should have overview + at least 2 detail slides
+	// Should have package map + at least 2 detail slides
 	require.GreaterOrEqual(t, len(slides), 3,
-		"expected overview + at least 2 detail slides")
-	assert.Equal(t, "Overview", slides[0].Title)
+		"expected package map + at least 2 detail slides")
+	assert.Equal(t, "Package Map", slides[0].Title)
 
 	// For each detail slide, verify orphaned interfaces are removed
 	for i := 1; i < len(slides); i++ {
