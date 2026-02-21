@@ -20,7 +20,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>goifaces — Interface Diagram</title>
+  <title>goifaces — {{.RepoAddress}}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -136,7 +136,7 @@ const htmlTemplate = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>goifaces — Interface Diagram</h1>
+  <h1>goifaces — {{.RepoAddress}}</h1>
 
   <div class="controls">
     <button id="zoom-in" title="Zoom In">+ Zoom In</button>
@@ -210,7 +210,7 @@ const htmlTemplate = `<!DOCTYPE html>
 
 // Serve starts the HTTP server with the given Mermaid content.
 // It blocks until the context is cancelled.
-func Serve(ctx context.Context, mermaidContent string, port int, openBrowser bool, logger *slog.Logger) error {
+func Serve(ctx context.Context, mermaidContent string, repoAddress string, port int, openBrowser bool, logger *slog.Logger) error {
 	tmpl, err := template.New("diagram").Parse(htmlTemplate)
 	if err != nil {
 		return fmt.Errorf("parsing HTML template: %w", err)
@@ -219,9 +219,11 @@ func Serve(ctx context.Context, mermaidContent string, port int, openBrowser boo
 	data := struct {
 		MermaidContent string
 		MermaidRaw     string
+		RepoAddress    string
 	}{
 		MermaidContent: mermaidContent,
 		MermaidRaw:     mermaidContent,
+		RepoAddress:    repoAddress,
 	}
 
 	mux := http.NewServeMux()
@@ -304,8 +306,9 @@ type slideEntry struct {
 
 // slidesData holds all data passed to the slides HTML template.
 type slidesData struct {
-	Slides     []slideEntry
-	SlideCount int
+	Slides      []slideEntry
+	SlideCount  int
+	RepoAddress string
 }
 
 const slidesHTMLTemplate = `<!DOCTYPE html>
@@ -313,7 +316,7 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>goifaces — Interface Diagram (Slides)</title>
+  <title>goifaces — {{.RepoAddress}}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -455,7 +458,7 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>goifaces — Interface Diagram</h1>
+  <h1>goifaces — {{.RepoAddress}}</h1>
 
   <div class="controls">
     <button id="prev-btn" title="Previous Slide">Prev</button>
@@ -596,7 +599,7 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
 
 // ServeSlides starts the HTTP server with paginated slide navigation.
 // It blocks until the context is cancelled.
-func ServeSlides(ctx context.Context, slides []diagram.Slide, port int, openBrowser bool, logger *slog.Logger) error {
+func ServeSlides(ctx context.Context, slides []diagram.Slide, repoAddress string, port int, openBrowser bool, logger *slog.Logger) error {
 	tmpl, err := template.New("slides").Parse(slidesHTMLTemplate)
 	if err != nil {
 		return fmt.Errorf("parsing slides HTML template: %w", err)
@@ -612,8 +615,9 @@ func ServeSlides(ctx context.Context, slides []diagram.Slide, port int, openBrow
 	}
 
 	data := slidesData{
-		Slides:     entries,
-		SlideCount: len(slides),
+		Slides:      entries,
+		SlideCount:  len(slides),
+		RepoAddress: repoAddress,
 	}
 
 	mux := http.NewServeMux()

@@ -175,7 +175,7 @@ func main() {
 
 		openBrowser := !*noBrowser
 		fmt.Printf("Starting server on http://localhost:%d\n", *port)
-		if err := server.ServeSlides(ctx, slides, *port, openBrowser, logger); err != nil {
+		if err := server.ServeSlides(ctx, slides, input, *port, openBrowser, logger); err != nil {
 			logger.Error("server error", "error", err)
 			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 			os.Exit(1)
