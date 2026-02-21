@@ -41,11 +41,22 @@ Filters results by:
 
 ### `internal/enricher`
 Composable pipeline of enrichers. Each implements `Enricher` interface.
-- **Grouper** — groups by package (code default)
-- **Simplifier** — prunes orphans, caps node count (code default)
-- **PatternDetector** — no-op placeholder for LLM iteration 2
-- **Annotator** — no-op placeholder for LLM iteration 2
-- **Scorer** — equal weight placeholder for LLM iteration 2
+- **Grouper** — groups by package (default), or by architectural layer (LLM)
+- **Simplifier** — prunes orphans, caps node count by edge rank (default) or architectural significance (LLM)
+- **PatternDetector** — detects GoF and Go-specific design patterns (LLM), no-op default
+- **Annotator** — generates human-readable descriptions (LLM), no-op default
+- **Scorer** — ranks relationships by architectural importance (LLM), equal weight default
+
+Each LLM enricher wraps a default enricher and falls back to it on any error (timeout, malformed response, API failure). Enable with `--enrich` flag.
+
+### `internal/enricher/llm`
+Lightweight LLM client abstraction speaking the OpenAI-compatible chat completions API. Uses stdlib `net/http` + `encoding/json` (no external SDK). Features:
+- JSON mode (`response_format: {type: "json_object"}`)
+- Retry on 5xx (1 retry with backoff)
+- Respect `Retry-After` header on 429
+- Response body size limit (10 MB)
+- API key masking in logs via `slog.LogValuer`
+- Result serialization helpers for compact LLM prompts
 
 ### `internal/diagram`
 Generates Mermaid `classDiagram` syntax from analysis results. Uses `direction LR` layout so implementations appear on the left and interfaces on the right. Interface blocks (blue) display `<<interface>>` tag and method signatures; implementation blocks (green) show only the type name -- methods are omitted from impl blocks because they are already listed in the interface blocks, reducing visual clutter. Handles node ID sanitization, method truncation, deterministic ordering. Slide generation uses a pluggable `Splitter` interface to group nodes into slides. The overview (first) slide shows only interface nodes with interface→interface embedding/extension arrows (`--|>`), while detail slides show full interface+implementation diagrams with implementation arrows (`..|>`).

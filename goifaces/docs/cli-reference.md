@@ -27,6 +27,15 @@ The first positional argument is the Go code to analyze. Can be:
 | `-slide-threshold` | int | `20` | Node count above which slide mode activates |
 | `-hub-threshold` | int | `3` | Min connections for an interface to be a hub (repeated on every slide) |
 | `-chunk-size` | int | `3` | Max implementations per detail slide |
+| `-enrich` | bool | `false` | Enable LLM-backed enrichment (semantic grouping, pattern detection, intelligent simplification) |
+
+### Environment Variables (for `-enrich`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `GOIFACES_LLM_API_KEY` | (required) | API key for the OpenAI-compatible endpoint |
+| `GOIFACES_LLM_ENDPOINT` | `https://api.openai.com/v1` | API base URL (works with any OpenAI-compatible endpoint) |
+| `GOIFACES_LLM_MODEL` | `gpt-4o-mini` | Model identifier |
 
 ## Examples
 
@@ -54,4 +63,10 @@ goifaces ./my-project -filter github.com/user/repo/internal
 
 # Control slide splitting for large diagrams
 goifaces https://github.com/hashicorp/go-memdb -hub-threshold 3 -chunk-size 4
+
+# Enable LLM enrichment (requires API key)
+GOIFACES_LLM_API_KEY=sk-... goifaces ./my-project -enrich
+
+# Use a custom OpenAI-compatible endpoint
+GOIFACES_LLM_ENDPOINT=http://localhost:11434/v1 GOIFACES_LLM_MODEL=llama3 GOIFACES_LLM_API_KEY=none goifaces ./my-project -enrich
 ```
