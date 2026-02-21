@@ -508,6 +508,133 @@ func TestPackageMapMultiPackage(t *testing.T) {
 	// Should show counts
 	assert.Contains(t, pkgMap, "2 ifaces", "io should show 2 interfaces")
 	assert.Contains(t, pkgMap, "1 ifaces", "http should show 1 interface")
+
+	// Labels must use <br/> for line breaks, not literal \n
+	assert.NotContains(t, pkgMap, `\n`, "package map labels should not contain literal backslash-n")
+}
+
+func TestFormatPkgLabel(t *testing.T) {
+	// formatPkgLabel is unexported, so we test it indirectly via BuildSlides
+	// which calls generatePackageMapMermaid → renderTree → formatPkgLabel.
+	pkg := "example.com/proj/mypkg"
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 3})
+	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting to get package map
+
+	t.Run("both_ifaces_and_types", func(t *testing.T) {
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "B", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "Y", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "Z", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+			{Type: &typs[1], Interface: &ifaces[0]},
+			{Type: &typs[2], Interface: &ifaces[1]},
+		}
+		result := &analyzer.Result{
+			Interfaces: ifaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "mypkg<br/>2 ifaces, 3 types",
+			"label should use <br/> for line break with both ifaces and types")
+		assert.NotContains(t, pkgMap, `\n`,
+			"package map labels should not contain literal backslash-n")
+	})
+
+	t.Run("empty_result", func(t *testing.T) {
+		// An empty result (no interfaces, no types) produces a bare flowchart
+		// with no nodes — formatPkgLabel is never called.
+		result := &analyzer.Result{}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		// With no packages, the label is just "flowchart LR" with no stats
+		assert.Contains(t, pkgMap, "flowchart LR")
+		assert.NotContains(t, pkgMap, "<br/>",
+			"empty result should not produce any label with line break")
+	})
+
+	t.Run("only_interfaces", func(t *testing.T) {
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "B", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "C", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		// Need at least one relation and type to trigger splitting
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+		}
+		// Use a second package that has only interfaces (no types)
+		ifacePkg := "example.com/proj/ifonly"
+		ifaceOnlyIfaces := []analyzer.InterfaceDef{
+			{Name: "P", PkgPath: ifacePkg, PkgName: "ifonly"},
+			{Name: "Q", PkgPath: ifacePkg, PkgName: "ifonly"},
+		}
+		allIfaces := make([]analyzer.InterfaceDef, 0, len(ifaces)+len(ifaceOnlyIfaces))
+		allIfaces = append(allIfaces, ifaces...)
+		allIfaces = append(allIfaces, ifaceOnlyIfaces...)
+		result := &analyzer.Result{
+			Interfaces: allIfaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "ifonly<br/>2 ifaces",
+			"package with only interfaces should show iface count without types")
+		assert.NotContains(t, pkgMap, "ifonly<br/>2 ifaces,",
+			"should not have trailing comma when there are no types")
+	})
+
+	t.Run("only_types", func(t *testing.T) {
+		// A package that has only types (no interfaces)
+		typePkg := "example.com/proj/typonly"
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "T1", PkgPath: typePkg, PkgName: "typonly"},
+			{Name: "T2", PkgPath: typePkg, PkgName: "typonly"},
+			{Name: "T3", PkgPath: typePkg, PkgName: "typonly"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+		}
+		result := &analyzer.Result{
+			Interfaces: ifaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "typonly<br/>3 types",
+			"package with only types should show type count without ifaces")
+		assert.NotContains(t, pkgMap, `\n`,
+			"package map labels should not contain literal backslash-n")
+	})
 }
 
 func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {

@@ -270,7 +270,7 @@ func formatPkgLabel(name string, s *pkgStats) string {
 	if len(parts) == 0 {
 		return name
 	}
-	return fmt.Sprintf("%s\\n%s", name, strings.Join(parts, ", "))
+	return fmt.Sprintf("%s<br/>%s", name, strings.Join(parts, ", "))
 }
 
 func longestCommonPrefix(strs []string) string {
