@@ -519,15 +519,25 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
       // All slides start visible so Mermaid can measure SVG text.
       // After rendering completes, fix SVG widths and add 'ready' class.
       mermaid.run().then(function() {
-        // Set each SVG width to its viewBox width so text renders at
-        // natural resolution instead of being squeezed to fit container.
+        // Set each SVG width based on its viewBox and available space.
+        // If the SVG fits, render at natural pixel width for crisp text.
+        // If it overflows, scale it down to fit the viewport.
         document.querySelectorAll('pre.mermaid svg').forEach(function(svg) {
           var vb = svg.getAttribute('viewBox');
           if (vb) {
             var w = parseFloat(vb.split(/\s+/)[2]);
             if (w > 0) {
-              svg.style.width = w + 'px';
-              svg.style.maxWidth = 'none';
+              var viewport = svg.closest('.diagram-viewport');
+              if (!viewport) return;
+              var available = viewport.clientWidth - 32;
+              if (available <= 0) return;
+              if (w > available) {
+                svg.style.width = '100%';
+                svg.style.maxWidth = '100%';
+              } else {
+                svg.style.width = w + 'px';
+                svg.style.maxWidth = 'none';
+              }
             }
           }
         });
