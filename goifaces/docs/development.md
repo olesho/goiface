@@ -67,11 +67,19 @@ goifaces/
       filter.go                 # Filtering logic
     enricher/
       enricher.go               # Enricher interface + types
-      grouper.go                # Package grouping
-      patterns.go               # Pattern detection (no-op)
-      simplifier.go             # Node cap + orphan pruning
-      annotator.go              # Annotation (no-op)
-      scorer.go                 # Relationship scoring (equal weight)
+      grouper.go                # Package grouping (default)
+      patterns.go               # Pattern detection (default no-op)
+      simplifier.go             # Node cap + orphan pruning (default)
+      annotator.go              # Annotation (default no-op)
+      scorer.go                 # Relationship scoring (default equal weight)
+      llm_grouper.go            # LLM semantic grouper
+      llm_patterns.go           # LLM pattern detector
+      llm_simplifier.go         # LLM intelligent simplifier
+      llm_annotator.go          # LLM annotator
+      llm_scorer.go             # LLM relationship scorer
+      llm/
+        client.go               # OpenAI-compatible HTTP client
+        serialize.go            # Result serialization for prompts
     diagram/mermaid.go          # Mermaid generation
     server/server.go            # HTTP server + browser
   testdata/                     # Self-contained Go modules for testing
