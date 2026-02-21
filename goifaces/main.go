@@ -14,6 +14,7 @@ import (
 	"github.com/olehluchkiv/goifaces/internal/diagram"
 	"github.com/olehluchkiv/goifaces/internal/diagram/split"
 	"github.com/olehluchkiv/goifaces/internal/enricher"
+	"github.com/olehluchkiv/goifaces/internal/enricher/llm"
 	"github.com/olehluchkiv/goifaces/internal/logging"
 	"github.com/olehluchkiv/goifaces/internal/resolver"
 	"github.com/olehluchkiv/goifaces/internal/server"
@@ -39,6 +40,7 @@ func main() {
 	slideThreshold := fs.Int("slide-threshold", 20, "node count above which slide mode activates")
 	hubThreshold := fs.Int("hub-threshold", 3, "min connections for an interface to be a hub (repeated on every slide)")
 	chunkSize := fs.Int("chunk-size", 3, "max implementations per detail slide")
+	enableEnrich := fs.Bool("enrich", false, "enable LLM-backed enrichment (requires GOIFACES_LLM_API_KEY)")
 
 	if err := fs.Parse(flags); err != nil {
 		os.Exit(1)
@@ -124,9 +126,36 @@ func main() {
 	}
 
 	// Step 4: Run enricher pipeline
-	enrichers := []enricher.Enricher{
-		enricher.NewDefaultGrouper(),
-		enricher.NewDefaultSimplifier(),
+	var enrichers []enricher.Enricher
+	if *enableEnrich {
+		apiKey := os.Getenv("GOIFACES_LLM_API_KEY")
+		if apiKey == "" {
+			fmt.Fprintln(os.Stderr, "Error: --enrich requires GOIFACES_LLM_API_KEY environment variable")
+			os.Exit(1)
+		}
+		endpoint := os.Getenv("GOIFACES_LLM_ENDPOINT")
+		if endpoint == "" {
+			endpoint = "https://api.openai.com/v1"
+		}
+		model := os.Getenv("GOIFACES_LLM_MODEL")
+		if model == "" {
+			model = "gpt-4o-mini"
+		}
+		llmClient := llm.NewClient(llm.Config{
+			Endpoint: endpoint,
+			APIKey:   apiKey,
+			Model:    model,
+		}, logger)
+		enrichers = []enricher.Enricher{
+			enricher.NewLLMGrouper(llmClient, enricher.NewDefaultGrouper(), logger),
+			enricher.NewLLMSimplifier(llmClient, enricher.NewDefaultSimplifier(), logger),
+		}
+		logger.Info("LLM enrichment enabled", "component", "main", "model", model, "endpoint", endpoint)
+	} else {
+		enrichers = []enricher.Enricher{
+			enricher.NewDefaultGrouper(),
+			enricher.NewDefaultSimplifier(),
+		}
 	}
 	for _, e := range enrichers {
 		result = e.Enrich(result)
