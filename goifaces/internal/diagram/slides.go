@@ -44,7 +44,7 @@ func BuildSlides(result *analyzer.Result, diagOpts DiagramOptions, splitter spli
 	// Slide 0: package map — shows repository package hierarchy
 	slides = append(slides, Slide{
 		Title:   "Package Map",
-		Mermaid: generatePackageMapMermaid(result, diagOpts),
+		Mermaid: GeneratePackageMapMermaid(result, diagOpts),
 	})
 
 	// Detail slides from splitter groups
@@ -165,10 +165,10 @@ type pkgStats struct {
 	Types      int
 }
 
-// generatePackageMapMermaid produces a Mermaid flowchart showing the repository's
+// GeneratePackageMapMermaid produces a Mermaid flowchart showing the repository's
 // package hierarchy. Each package is a node displaying its name and counts of
 // interfaces and types. Packages with subpackages are rendered as subgraphs.
-func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) string {
+func GeneratePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	// Collect stats per package path
 	stats := make(map[string]*pkgStats)
 	for _, iface := range result.Interfaces {
@@ -214,7 +214,7 @@ func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) str
 			rel = lastSegment(p)
 		}
 		parts := strings.Split(rel, "/")
-		insertNode(root, parts, p, stats[p])
+		insertNode(root, parts, p, rel, stats[p])
 	}
 
 	var b strings.Builder
@@ -248,12 +248,15 @@ func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) str
 // pkgNode represents a node in the package hierarchy tree.
 type pkgNode struct {
 	name     string    // segment name (e.g. "api")
+	relPath  string    // module-relative path (e.g. "internal/analyzer")
 	pkgPath  string    // full package path (only set for leaf/actual packages)
 	stats    *pkgStats // non-nil for actual packages
 	children map[string]*pkgNode
 }
 
-func insertNode(parent *pkgNode, parts []string, fullPath string, s *pkgStats) {
+// insertNode inserts a package into the hierarchy tree. Callers must sort paths
+// before calling so that parent nodes are created before their children.
+func insertNode(parent *pkgNode, parts []string, fullPath string, relPath string, s *pkgStats) {
 	if len(parts) == 0 {
 		return
 	}
@@ -265,9 +268,10 @@ func insertNode(parent *pkgNode, parts []string, fullPath string, s *pkgStats) {
 	}
 	if len(parts) == 1 {
 		child.pkgPath = fullPath
+		child.relPath = relPath
 		child.stats = s
 	} else {
-		insertNode(child, parts[1:], fullPath, s)
+		insertNode(child, parts[1:], fullPath, relPath, s)
 	}
 }
 
@@ -290,6 +294,11 @@ func renderTree(b *strings.Builder, node *pkgNode, depth int, colorIdx *int, sty
 
 		hasChildren := len(child.children) > 0
 
+		displayName := child.relPath
+		if displayName == "" {
+			displayName = child.name
+		}
+
 		if hasChildren {
 			// Render as subgraph with nested children
 			b.WriteString(fmt.Sprintf("\n%ssubgraph %s[\"%s\"]", indent, id, name))
@@ -301,7 +310,7 @@ func renderTree(b *strings.Builder, node *pkgNode, depth int, colorIdx *int, sty
 			// If this node itself is a package (has stats), add a summary node inside
 			if child.stats != nil {
 				innerID := id + "__self"
-				label := formatPkgLabel(name, child.stats)
+				label := formatPkgLabel(displayName, child.stats)
 				b.WriteString(fmt.Sprintf("\n%s    %s[\"%s\"]", indent, innerID, label))
 				*styles = append(*styles, nodeStyle{id: innerID, colorIdx: *colorIdx, isSubgraph: false})
 				*colorIdx++
@@ -311,7 +320,7 @@ func renderTree(b *strings.Builder, node *pkgNode, depth int, colorIdx *int, sty
 			b.WriteString(fmt.Sprintf("\n%send", indent))
 		} else {
 			// Leaf node
-			label := formatPkgLabel(name, child.stats)
+			label := formatPkgLabel(displayName, child.stats)
 			b.WriteString(fmt.Sprintf("\n%s%s[\"%s\"]", indent, id, label))
 			*styles = append(*styles, nodeStyle{id: id, colorIdx: *colorIdx, isSubgraph: false})
 			*colorIdx++
