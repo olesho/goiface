@@ -7,7 +7,9 @@ import (
 
 // Filter applies filtering options to the analysis result.
 func Filter(result *Result, opts AnalyzeOptions) *Result {
-	filtered := &Result{}
+	filtered := &Result{
+		ModulePath: result.ModulePath,
+	}
 
 	// Build sets of interfaces and types that participate in relations
 	ifaceSet := make(map[string]bool)
@@ -17,9 +19,17 @@ func Filter(result *Result, opts AnalyzeOptions) *Result {
 		iface := rel.Interface
 		typ := rel.Type
 
-		// Filter stdlib
-		if !opts.IncludeStdlib {
-			if isStdlib(iface.PkgPath) {
+		// Filter: keep only local module packages (and optionally stdlib)
+		isLocal := result.ModulePath != "" && strings.HasPrefix(iface.PkgPath, result.ModulePath)
+		isStd := isStdlib(iface.PkgPath)
+
+		if !isLocal {
+			// Skip stdlib unless explicitly included
+			if isStd && !opts.IncludeStdlib {
+				continue
+			}
+			// Skip external (non-stdlib, non-local) packages
+			if !isStd && result.ModulePath != "" {
 				continue
 			}
 		}

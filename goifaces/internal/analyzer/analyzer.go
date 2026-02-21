@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -15,6 +16,11 @@ import (
 
 // Analyze loads Go packages from dir and finds all interface-implementation relationships.
 func Analyze(ctx context.Context, dir string, opts AnalyzeOptions, logger *slog.Logger) (*Result, error) {
+	modulePath := readModulePath(dir)
+	if modulePath != "" {
+		logger.Info("detected module", "module_path", modulePath)
+	}
+
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax |
 			packages.NeedTypesInfo | packages.NeedImports,
@@ -120,9 +126,13 @@ func Analyze(ctx context.Context, dir string, opts AnalyzeOptions, logger *slog.
 			}
 		}
 
-		// Also collect interfaces from imported packages (for stdlib matching)
+		// Also collect interfaces from imported packages that belong to the local module
 		for _, imp := range pkg.Imports {
 			if imp.Types == nil {
+				continue
+			}
+			// Skip external packages — only collect from local module
+			if modulePath != "" && !strings.HasPrefix(imp.PkgPath, modulePath) {
 				continue
 			}
 			collectFromScope(imp.Types.Scope(), imp.PkgPath, imp.Name, imp.Fset, dir)
@@ -192,6 +202,7 @@ func Analyze(ctx context.Context, dir string, opts AnalyzeOptions, logger *slog.
 	return &Result{
 		Interfaces: ifaces,
 		Types:      namedTypes,
+		ModulePath: modulePath,
 		Relations:  relations,
 	}, nil
 }
@@ -274,6 +285,22 @@ func matchesMethodSet(mset *types.MethodSet, iface *types.Interface) bool {
 		}
 	}
 	return true
+}
+
+// readModulePath reads the module path from go.mod in dir.
+// Returns empty string if go.mod is not found or cannot be parsed.
+func readModulePath(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		}
+	}
+	return ""
 }
 
 // resolveSourceFile resolves a token position to a file path relative to moduleRoot.

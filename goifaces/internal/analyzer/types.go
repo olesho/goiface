@@ -41,6 +41,7 @@ type Result struct {
 	Interfaces []InterfaceDef
 	Types      []TypeDef
 	Relations  []Relation
+	ModulePath string // module path from go.mod (e.g. "github.com/user/repo")
 }
 
 // AnalyzeOptions controls analysis behavior.
