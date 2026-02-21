@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -107,30 +108,50 @@ func findModuleRoot(dir string) (string, error) {
 	}
 }
 
-// findModuleRootRecursive searches dir and its subdirectories for a go.mod file,
-// returning the directory containing the first one found (breadth-first).
+// findModuleRootRecursive searches downward from root for the shallowest go.mod file.
+// This is used for cloned repos where go.mod may be in a subdirectory.
 func findModuleRootRecursive(root string) (string, error) {
-	// Check root first
+	// Check root first (most common case)
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
 		return root, nil
 	}
 
-	// Search subdirectories (breadth-first, max depth 3)
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return "", err
-	}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
+	// BFS through subdirectories to find the shallowest go.mod
+	queue := []string{root}
+	for len(queue) > 0 {
+		var nextLevel []string
+		var candidates []string
+
+		for _, dir := range queue {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				if name == ".git" || name == "vendor" || name == "node_modules" || strings.HasPrefix(name, ".") {
+					continue
+				}
+				subdir := filepath.Join(dir, name)
+				if _, err := os.Stat(filepath.Join(subdir, "go.mod")); err == nil {
+					candidates = append(candidates, subdir)
+				} else {
+					nextLevel = append(nextLevel, subdir)
+				}
+			}
 		}
-		sub := filepath.Join(root, e.Name())
-		if _, err := os.Stat(filepath.Join(sub, "go.mod")); err == nil {
-			return sub, nil
+
+		if len(candidates) > 0 {
+			sort.Strings(candidates)
+			return candidates[0], nil
 		}
+		queue = nextLevel
 	}
 
-	return "", fmt.Errorf("no go.mod found in %s or immediate subdirectories", root)
+	return "", fmt.Errorf("no go.mod found in %s or any subdirectory", root)
 }
 
 func goModDownload(ctx context.Context, dir string, logger *slog.Logger) error {
