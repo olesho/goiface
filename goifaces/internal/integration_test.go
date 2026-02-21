@@ -398,13 +398,37 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	require.Equal(t, 5, len(slides), "expected 5 slides (1 overview + 4 detail): 17 nodes < 20 but 38 relations >= 20")
 	assert.Equal(t, "Overview", slides[0].Title)
 
-	// Each detail slide should contain hub interfaces
-	hubNames := []string{"memdb_Indexer", "memdb_MultiIndexer", "memdb_SingleIndexer", "memdb_PrefixIndexer"}
+	// Indexer, MultiIndexer, SingleIndexer connect to all 11 field-index types,
+	// so they should appear on every detail slide that has field-index types.
+	// PrefixIndexer connects only to String*, StringMap*, StringSlice*, CompoundIndex.
+	// ResultIterator connects only to FilterIterator.
+	coreHubs := []string{"memdb_Indexer", "memdb_MultiIndexer", "memdb_SingleIndexer"}
 	for i := 1; i < len(slides); i++ {
 		mermaid := slides[i].Mermaid
-		for _, hub := range hubNames {
+		// Every detail slide has at least one field-index type, so core hubs appear everywhere
+		for _, hub := range coreHubs {
 			assert.Contains(t, mermaid, hub,
 				"slide %d should contain hub %s", i, hub)
+		}
+	}
+
+	// PrefixIndexer should appear ONLY on slides containing its implementing types
+	prefixTypes := []string{"memdb_StringFieldIndex", "memdb_StringMapFieldIndex", "memdb_StringSliceFieldIndex", "memdb_CompoundIndex"}
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+		hasPrefixType := false
+		for _, pt := range prefixTypes {
+			if strings.Contains(mermaid, pt) {
+				hasPrefixType = true
+				break
+			}
+		}
+		if hasPrefixType {
+			assert.Contains(t, mermaid, "memdb_PrefixIndexer",
+				"slide %d has PrefixIndexer types, so PrefixIndexer hub should be present", i)
+		} else {
+			assert.NotContains(t, mermaid, "memdb_PrefixIndexer",
+				"slide %d has no PrefixIndexer types, so PrefixIndexer hub should be absent (orphan)", i)
 		}
 	}
 
@@ -418,6 +442,15 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	require.NotEmpty(t, filterSlide, "FilterIterator should appear on some slide")
 	assert.Contains(t, filterSlide, "memdb_ResultIterator",
 		"ResultIterator should be on same slide as FilterIterator")
+
+	// ResultIterator should NOT appear on slides without FilterIterator (it would be orphaned)
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+		if !strings.Contains(mermaid, "memdb_FilterIterator") {
+			assert.NotContains(t, mermaid, "memdb_ResultIterator",
+				"slide %d has no FilterIterator, so ResultIterator should be absent (orphan)", i)
+		}
+	}
 
 	// Overview should show only interface nodes, no implementations
 	overview := slides[0].Mermaid
@@ -514,4 +547,78 @@ func TestOverviewInterfaceEmbedding(t *testing.T) {
 	assert.NotContains(t, overview, "io2_MyFile", "overview should not have implementation nodes")
 	assert.NotContains(t, overview, "..|>", "overview should not have implementation arrows")
 	assert.NotContains(t, overview, "implStyle", "overview should not have implStyle")
+}
+
+func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
+	// Synthetic data: 2 hub interfaces, 3 types split across 2 slides.
+	// Interface A connects to X, Y, Z. Interface B connects only to Z.
+	// Slide 1 has X, Y → A should appear, B should NOT (orphaned).
+	// Slide 2 has Z → both A and B should appear.
+	pkg := "test"
+	makeIface := func(name string) analyzer.InterfaceDef {
+		return analyzer.InterfaceDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+	makeType := func(name string) analyzer.TypeDef {
+		return analyzer.TypeDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+
+	ifaceA := makeIface("A")
+	ifaceB := makeIface("B")
+	typeX := makeType("X")
+	typeY := makeType("Y")
+	typeZ := makeType("Z")
+
+	rels := []analyzer.Relation{
+		{Type: &typeX, Interface: &ifaceA},
+		{Type: &typeY, Interface: &ifaceA},
+		{Type: &typeZ, Interface: &ifaceA},
+		{Type: &typeZ, Interface: &ifaceB},
+	}
+
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{ifaceA, ifaceB},
+		Types:      []analyzer.TypeDef{typeX, typeY, typeZ},
+		Relations:  rels,
+	}
+
+	// With HubThreshold=1, both A (3 connections) and B (1 connection) qualify as
+	// hubs (>= 1), so both appear in HubKeys on every detail slide.
+	// The post-filter in subResultForSplitGroup removes B from slides where none of
+	// B's implementing types (only Z) are present.
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 1, ChunkSize: 2})
+	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting
+
+	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+
+	// Should have overview + at least 2 detail slides
+	require.GreaterOrEqual(t, len(slides), 3,
+		"expected overview + at least 2 detail slides")
+	assert.Equal(t, "Overview", slides[0].Title)
+
+	// For each detail slide, verify orphaned interfaces are removed
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+
+		// If B's only type (Z) is not on this slide, B should be absent
+		if !strings.Contains(mermaid, "test_Z") {
+			assert.NotContains(t, mermaid, "test_B",
+				"slide %d: B has no implementing types, should be absent", i)
+		} else {
+			assert.Contains(t, mermaid, "test_B",
+				"slide %d: Z is present, so B should be present", i)
+		}
+
+		// A connects to X, Y, Z — if none are present, A should be absent
+		hasAType := strings.Contains(mermaid, "test_X") ||
+			strings.Contains(mermaid, "test_Y") ||
+			strings.Contains(mermaid, "test_Z")
+		if hasAType {
+			assert.Contains(t, mermaid, "test_A",
+				"slide %d: has A's implementing types, so A should be present", i)
+		} else {
+			assert.NotContains(t, mermaid, "test_A",
+				"slide %d: no types for A, so A should be absent", i)
+		}
+	}
 }

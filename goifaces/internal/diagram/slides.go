@@ -102,6 +102,23 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 		}
 	}
 
+	// Post-filter: remove interfaces with no relations on this slide.
+	// Hub interfaces are replicated onto every group but may have no
+	// implementing type present, leaving orphaned nodes.
+	usedIfaces := make(map[string]bool, len(sub.Relations))
+	for _, rel := range sub.Relations {
+		ik := typeKey(rel.Interface.PkgPath, rel.Interface.Name)
+		usedIfaces[ik] = true
+	}
+	filtered := sub.Interfaces[:0]
+	for _, iface := range sub.Interfaces {
+		ik := typeKey(iface.PkgPath, iface.Name)
+		if usedIfaces[ik] {
+			filtered = append(filtered, iface)
+		}
+	}
+	sub.Interfaces = filtered
+
 	return sub
 }
 
