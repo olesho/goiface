@@ -1,0 +1,4 @@
+.DS_Store
+worktrees/
+.beads/interactions.jsonl
+.beads/rpc-token
