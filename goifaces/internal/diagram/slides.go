@@ -104,6 +104,34 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 	return sub
 }
 
+// pastelColor defines a muted color for package map nodes.
+type pastelColor struct {
+	Fill   string
+	Stroke string
+	Text   string
+}
+
+// pastelPalette contains ~10 muted/pastel colors for package map nodes.
+var pastelPalette = []pastelColor{
+	{"#e8f4fd", "#b8d4e8", "#333333"}, // light blue
+	{"#e8f5e9", "#b8d8ba", "#333333"}, // light green
+	{"#fff3e0", "#e8c9a0", "#333333"}, // light orange
+	{"#f3e5f5", "#d1b3d8", "#333333"}, // light purple
+	{"#fce4ec", "#e8b0bf", "#333333"}, // light pink
+	{"#e0f2f1", "#b0d4d1", "#333333"}, // light teal
+	{"#fff9c4", "#e8dea0", "#333333"}, // light yellow
+	{"#e8eaf6", "#b8bce8", "#333333"}, // light indigo
+	{"#efebe9", "#c8b8ad", "#333333"}, // light brown
+	{"#f1f8e9", "#c4dba0", "#333333"}, // light lime
+}
+
+// nodeStyle records a node's color assignment for later style emission.
+type nodeStyle struct {
+	id         string
+	colorIdx   int
+	isSubgraph bool
+}
+
 // pkgStats holds per-package counts for the package map.
 type pkgStats struct {
 	Interfaces int
@@ -168,7 +196,24 @@ func generatePackageMapMermaid(result *analyzer.Result, opts DiagramOptions) str
 	}
 	b.WriteString("flowchart LR")
 
-	renderTree(&b, root, 1)
+	// Emit classDef for each palette color (used by subgraphs)
+	for i, c := range pastelPalette {
+		b.WriteString(fmt.Sprintf("\n    classDef pkgColor%d fill:%s,stroke:%s,color:%s", i, c.Fill, c.Stroke, c.Text))
+	}
+
+	colorIdx := 0
+	var styles []nodeStyle
+	renderTree(&b, root, 1, &colorIdx, &styles)
+
+	// Emit style/class lines after all subgraph declarations are complete
+	for _, s := range styles {
+		if s.isSubgraph {
+			b.WriteString(fmt.Sprintf("\n    class %s pkgColor%d", s.id, s.colorIdx%len(pastelPalette)))
+		} else {
+			c := pastelPalette[s.colorIdx%len(pastelPalette)]
+			b.WriteString(fmt.Sprintf("\n    style %s fill:%s,stroke:%s,color:%s", s.id, c.Fill, c.Stroke, c.Text))
+		}
+	}
 
 	return b.String()
 }
@@ -199,7 +244,7 @@ func insertNode(parent *pkgNode, parts []string, fullPath string, s *pkgStats) {
 	}
 }
 
-func renderTree(b *strings.Builder, node *pkgNode, depth int) {
+func renderTree(b *strings.Builder, node *pkgNode, depth int, colorIdx *int, styles *[]nodeStyle) {
 	// Sort children for deterministic output
 	var names []string
 	for name := range node.children {
@@ -222,19 +267,27 @@ func renderTree(b *strings.Builder, node *pkgNode, depth int) {
 			// Render as subgraph with nested children
 			b.WriteString(fmt.Sprintf("\n%ssubgraph %s[\"%s\"]", indent, id, name))
 
+			// Assign color to subgraph
+			*styles = append(*styles, nodeStyle{id: id, colorIdx: *colorIdx, isSubgraph: true})
+			*colorIdx++
+
 			// If this node itself is a package (has stats), add a summary node inside
 			if child.stats != nil {
 				innerID := id + "__self"
 				label := formatPkgLabel(name, child.stats)
 				b.WriteString(fmt.Sprintf("\n%s    %s[\"%s\"]", indent, innerID, label))
+				*styles = append(*styles, nodeStyle{id: innerID, colorIdx: *colorIdx, isSubgraph: false})
+				*colorIdx++
 			}
 
-			renderTree(b, child, depth+1)
+			renderTree(b, child, depth+1, colorIdx, styles)
 			b.WriteString(fmt.Sprintf("\n%send", indent))
 		} else {
 			// Leaf node
 			label := formatPkgLabel(name, child.stats)
 			b.WriteString(fmt.Sprintf("\n%s%s[\"%s\"]", indent, id, label))
+			*styles = append(*styles, nodeStyle{id: id, colorIdx: *colorIdx, isSubgraph: false})
+			*colorIdx++
 		}
 	}
 }

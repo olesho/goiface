@@ -430,6 +430,9 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	assert.Contains(t, pkgMap, "memdb", "package map should show memdb package")
 	assert.Contains(t, pkgMap, "ifaces", "package map should show interface count")
 	assert.Contains(t, pkgMap, "types", "package map should show type count")
+
+	// Package map should have pastel color definitions
+	assert.Contains(t, pkgMap, "classDef pkgColor0", "package map should define color classes")
 }
 
 func TestPackageMapMultiPackage(t *testing.T) {
@@ -477,4 +480,11 @@ func TestPackageMapMultiPackage(t *testing.T) {
 	// Should show counts
 	assert.Contains(t, pkgMap, "2 ifaces", "io should show 2 interfaces")
 	assert.Contains(t, pkgMap, "1 ifaces", "http should show 1 interface")
+
+	// Should have color definitions and style assignments
+	assert.Contains(t, pkgMap, "classDef pkgColor0", "should define color class 0")
+	assert.Contains(t, pkgMap, "classDef pkgColor1", "should define color class 1")
+	assert.True(t,
+		strings.Contains(pkgMap, "style ") || strings.Contains(pkgMap, "class "),
+		"should apply colors via style or class statements")
 }
