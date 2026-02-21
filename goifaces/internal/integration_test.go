@@ -519,8 +519,9 @@ func TestPackageMapMultiPackage(t *testing.T) {
 		strings.Contains(pkgMap, "style ") || strings.Contains(pkgMap, "class "),
 		"should apply colors via style or class statements")
 
-	// Labels must use <br/> for line breaks, not literal \n
+	// Labels must use real newline for line breaks (not <br/> which gets HTML-escaped)
 	assert.NotContains(t, pkgMap, `\n`, "package map labels should not contain literal backslash-n")
+	assert.NotContains(t, pkgMap, "<br/>", "package map labels should use newline, not <br/>")
 }
 
 func TestFormatPkgLabel(t *testing.T) {
@@ -556,8 +557,8 @@ func TestFormatPkgLabel(t *testing.T) {
 		require.GreaterOrEqual(t, len(slides), 1)
 		pkgMap := slides[0].Mermaid
 
-		assert.Contains(t, pkgMap, "mypkg<br/>2 ifaces, 3 types",
-			"label should use <br/> for line break with both ifaces and types")
+		assert.Contains(t, pkgMap, "mypkg\n2 ifaces, 3 types",
+			"label should use newline for line break with both ifaces and types")
 		assert.NotContains(t, pkgMap, `\n`,
 			"package map labels should not contain literal backslash-n")
 	})
@@ -609,9 +610,9 @@ func TestFormatPkgLabel(t *testing.T) {
 		require.GreaterOrEqual(t, len(slides), 1)
 		pkgMap := slides[0].Mermaid
 
-		assert.Contains(t, pkgMap, "ifonly<br/>2 ifaces",
+		assert.Contains(t, pkgMap, "ifonly\n2 ifaces",
 			"package with only interfaces should show iface count without types")
-		assert.NotContains(t, pkgMap, "ifonly<br/>2 ifaces,",
+		assert.NotContains(t, pkgMap, "ifonly\n2 ifaces,",
 			"should not have trailing comma when there are no types")
 	})
 
@@ -640,7 +641,7 @@ func TestFormatPkgLabel(t *testing.T) {
 		require.GreaterOrEqual(t, len(slides), 1)
 		pkgMap := slides[0].Mermaid
 
-		assert.Contains(t, pkgMap, "typonly<br/>3 types",
+		assert.Contains(t, pkgMap, "typonly\n3 types",
 			"package with only types should show type count without ifaces")
 		assert.NotContains(t, pkgMap, `\n`,
 			"package map labels should not contain literal backslash-n")
@@ -717,6 +718,79 @@ func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
 		} else {
 			assert.NotContains(t, mermaid, "test_A",
 				"slide %d: no types for A, so A should be absent", i)
+		}
+	}
+}
+
+func TestOrphanedTypesRemovedFromSlides(t *testing.T) {
+	// Scenario: type W only implements non-hub interface C. C is attached to
+	// a different chunk (the one containing Y, which also implements C). W is
+	// chunked separately and ends up on a slide where C is absent, leaving W
+	// with no relations — it should be pruned.
+	//
+	// Setup:
+	//   Hub A (3 connections: X, Y, Z — meets threshold=3)
+	//   Non-hub C (2 connections: Y, W — below threshold)
+	//   Types sorted: W, X, Y, Z → chunk1=[W,X], chunk2=[Y,Z]
+	//   C attached to chunk2 (Y is there, first match)
+	//   chunk1: HubKeys=[A], SpokeKeys=[W,X]
+	//     W→C: C not in HubKeys → relation dropped → W is orphaned type
+	pkg := "test"
+	makeIface := func(name string) analyzer.InterfaceDef {
+		return analyzer.InterfaceDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+	makeType := func(name string) analyzer.TypeDef {
+		return analyzer.TypeDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+
+	ifaceA := makeIface("A")
+	ifaceC := makeIface("C")
+	typeW := makeType("W")
+	typeX := makeType("X")
+	typeY := makeType("Y")
+	typeZ := makeType("Z")
+
+	rels := []analyzer.Relation{
+		{Type: &typeX, Interface: &ifaceA},
+		{Type: &typeY, Interface: &ifaceA},
+		{Type: &typeZ, Interface: &ifaceA},
+		{Type: &typeY, Interface: &ifaceC}, // C connects to Y (chunk2)
+		{Type: &typeW, Interface: &ifaceC}, // W only implements C
+	}
+
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{ifaceA, ifaceC},
+		Types:      []analyzer.TypeDef{typeW, typeX, typeY, typeZ},
+		Relations:  rels,
+	}
+
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 2})
+	slideOpts := diagram.SlideOptions{Threshold: 0}
+
+	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+
+	require.GreaterOrEqual(t, len(slides), 3,
+		"expected package map + at least 2 detail slides")
+
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+
+		// Every type on a slide should have at least one relation on that slide.
+		// Check W specifically: if C is not on this slide, W should be absent.
+		if !strings.Contains(mermaid, "test_C") && !strings.Contains(mermaid, "test_A") {
+			// No interfaces at all → no types should appear
+			assert.NotContains(t, mermaid, "test_W",
+				"slide %d: no interfaces present, W should be absent", i)
+		}
+
+		// More general check: any type that appears should have a relation arrow
+		for _, typeName := range []string{"W", "X", "Y", "Z"} {
+			nodeID := "test_" + typeName
+			if strings.Contains(mermaid, "class "+nodeID) {
+				assert.Contains(t, mermaid, nodeID+" --|>",
+					"slide %d: type %s appears but has no outgoing relation (orphaned)", i, typeName)
+			}
 		}
 	}
 }

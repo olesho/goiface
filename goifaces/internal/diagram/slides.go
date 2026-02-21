@@ -101,22 +101,32 @@ func subResultForSplitGroup(full *analyzer.Result, g split.Group) *analyzer.Resu
 		}
 	}
 
-	// Post-filter: remove interfaces with no relations on this slide.
+	// Post-filter: remove interfaces and types with no relations on this slide.
 	// Hub interfaces are replicated onto every group but may have no
-	// implementing type present, leaving orphaned nodes.
+	// implementing type present, leaving orphaned nodes. Similarly, a spoke
+	// type may end up with no surviving relations if all its interfaces were
+	// placed on a different group.
 	usedIfaces := make(map[string]bool, len(sub.Relations))
+	usedTypes := make(map[string]bool, len(sub.Relations))
 	for _, rel := range sub.Relations {
-		ik := typeKey(rel.Interface.PkgPath, rel.Interface.Name)
-		usedIfaces[ik] = true
+		usedIfaces[typeKey(rel.Interface.PkgPath, rel.Interface.Name)] = true
+		usedTypes[typeKey(rel.Type.PkgPath, rel.Type.Name)] = true
 	}
-	filtered := sub.Interfaces[:0]
+	filteredIfaces := sub.Interfaces[:0]
 	for _, iface := range sub.Interfaces {
-		ik := typeKey(iface.PkgPath, iface.Name)
-		if usedIfaces[ik] {
-			filtered = append(filtered, iface)
+		if usedIfaces[typeKey(iface.PkgPath, iface.Name)] {
+			filteredIfaces = append(filteredIfaces, iface)
 		}
 	}
-	sub.Interfaces = filtered
+	sub.Interfaces = filteredIfaces
+
+	filteredTypes := sub.Types[:0]
+	for _, typ := range sub.Types {
+		if usedTypes[typeKey(typ.PkgPath, typ.Name)] {
+			filteredTypes = append(filteredTypes, typ)
+		}
+	}
+	sub.Types = filteredTypes
 
 	return sub
 }
@@ -323,7 +333,7 @@ func formatPkgLabel(name string, s *pkgStats) string {
 	if len(parts) == 0 {
 		return name
 	}
-	return fmt.Sprintf("%s<br/>%s", name, strings.Join(parts, ", "))
+	return fmt.Sprintf("%s\n%s", name, strings.Join(parts, ", "))
 }
 
 func longestCommonPrefix(strs []string) string {

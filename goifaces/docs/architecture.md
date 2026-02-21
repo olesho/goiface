@@ -65,7 +65,7 @@ Generates Mermaid `classDiagram` syntax from analysis results. Uses `direction L
 
 ### `internal/diagram/split`
 Slide splitting strategies. Defines the `Splitter` interface and `Group` type.
-- **HubAndSpoke** — identifies high-connectivity interfaces (hubs, connections >= threshold) that repeat on every detail slide, then chunks remaining types (spokes) into groups. Non-hub interfaces are attached to the chunk containing their connected types.
+- **HubAndSpoke** — identifies high-connectivity interfaces (hubs, connections >= threshold) that repeat on every detail slide, then chunks remaining types (spokes) into groups. Non-hub interfaces are attached to the chunk containing their connected types. A post-filter in `subResultForSplitGroup` removes orphaned interfaces and types that have no surviving relations on a given slide.
 
 ### `internal/server`
 HTTP server serving HTML with embedded Mermaid.js rendering. Includes zoom controls, copy button, and auto-browser-open.
