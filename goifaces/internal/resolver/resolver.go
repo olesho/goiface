@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -76,11 +77,20 @@ func cloneRepo(ctx context.Context, url string, logger *slog.Logger) (string, fu
 
 	logger.Info("clone complete", "dest", tmpDir)
 
-	if err := goModDownload(ctx, tmpDir, logger); err != nil {
+	// Find module root (go.mod) in the cloned tree
+	modRoot, err := findModuleRootInTree(tmpDir)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("finding module root in cloned repo: %w", err)
+	}
+
+	logger.Info("found module root", "module_root", modRoot)
+
+	if err := goModDownload(ctx, modRoot, logger); err != nil {
 		logger.Warn("go mod download failed", "error", err)
 	}
 
-	return tmpDir, cleanup, nil
+	return modRoot, cleanup, nil
 }
 
 func findModuleRoot(dir string) (string, error) {
@@ -96,6 +106,52 @@ func findModuleRoot(dir string) (string, error) {
 		}
 		current = parent
 	}
+}
+
+// findModuleRootInTree searches downward from root for the shallowest go.mod file.
+// This is used for cloned repos where go.mod may be in a subdirectory.
+func findModuleRootInTree(root string) (string, error) {
+	// First check the root itself (most common case)
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+		return root, nil
+	}
+
+	// BFS through subdirectories to find the shallowest go.mod
+	queue := []string{root}
+	for len(queue) > 0 {
+		var nextLevel []string
+		var candidates []string
+
+		for _, dir := range queue {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				if name == ".git" || name == "vendor" || name == "node_modules" || name[0] == '.' {
+					continue
+				}
+				subdir := filepath.Join(dir, name)
+				if _, err := os.Stat(filepath.Join(subdir, "go.mod")); err == nil {
+					candidates = append(candidates, subdir)
+				} else {
+					nextLevel = append(nextLevel, subdir)
+				}
+			}
+		}
+
+		if len(candidates) > 0 {
+			sort.Strings(candidates)
+			return candidates[0], nil
+		}
+		queue = nextLevel
+	}
+
+	return "", fmt.Errorf("no go.mod found in %s or any subdirectory", root)
 }
 
 func goModDownload(ctx context.Context, dir string, logger *slog.Logger) error {
