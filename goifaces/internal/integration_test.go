@@ -18,9 +18,7 @@ import (
 
 // normalizeOutput sorts class definitions and relations alphabetically
 // to make comparison deterministic regardless of map iteration order.
-// Designed for full-diagram output from GenerateMermaid only. For overview
-// slide output (generateOverviewMermaid), cssClass lines appear after class
-// blocks and will be silently dropped by this function.
+// Designed for full-diagram output from GenerateMermaid only.
 func normalizeOutput(s string) string {
 	s = strings.TrimSpace(s)
 	lines := strings.Split(s, "\n")
@@ -403,13 +401,37 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	require.Equal(t, 5, len(slides), "expected 5 slides (1 package map + 4 detail): 17 nodes < 20 but 38 relations >= 20")
 	assert.Equal(t, "Package Map", slides[0].Title)
 
-	// Each detail slide should contain hub interfaces
-	hubNames := []string{"memdb_Indexer", "memdb_MultiIndexer", "memdb_SingleIndexer", "memdb_PrefixIndexer"}
+	// Indexer, MultiIndexer, SingleIndexer connect to all 11 field-index types,
+	// so they should appear on every detail slide that has field-index types.
+	// PrefixIndexer connects only to String*, StringMap*, StringSlice*, CompoundIndex.
+	// ResultIterator connects only to FilterIterator.
+	coreHubs := []string{"memdb_Indexer", "memdb_MultiIndexer", "memdb_SingleIndexer"}
 	for i := 1; i < len(slides); i++ {
 		mermaid := slides[i].Mermaid
-		for _, hub := range hubNames {
+		// Every detail slide has at least one field-index type, so core hubs appear everywhere
+		for _, hub := range coreHubs {
 			assert.Contains(t, mermaid, hub,
 				"slide %d should contain hub %s", i, hub)
+		}
+	}
+
+	// PrefixIndexer should appear ONLY on slides containing its implementing types
+	prefixTypes := []string{"memdb_StringFieldIndex", "memdb_StringMapFieldIndex", "memdb_StringSliceFieldIndex", "memdb_CompoundIndex"}
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+		hasPrefixType := false
+		for _, pt := range prefixTypes {
+			if strings.Contains(mermaid, pt) {
+				hasPrefixType = true
+				break
+			}
+		}
+		if hasPrefixType {
+			assert.Contains(t, mermaid, "memdb_PrefixIndexer",
+				"slide %d has PrefixIndexer types, so PrefixIndexer hub should be present", i)
+		} else {
+			assert.NotContains(t, mermaid, "memdb_PrefixIndexer",
+				"slide %d has no PrefixIndexer types, so PrefixIndexer hub should be absent (orphan)", i)
 		}
 	}
 
@@ -423,6 +445,15 @@ func TestHubAndSpokeSlides(t *testing.T) {
 	require.NotEmpty(t, filterSlide, "FilterIterator should appear on some slide")
 	assert.Contains(t, filterSlide, "memdb_ResultIterator",
 		"ResultIterator should be on same slide as FilterIterator")
+
+	// ResultIterator should NOT appear on slides without FilterIterator (it would be orphaned)
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+		if !strings.Contains(mermaid, "memdb_FilterIterator") {
+			assert.NotContains(t, mermaid, "memdb_ResultIterator",
+				"slide %d has no FilterIterator, so ResultIterator should be absent (orphan)", i)
+		}
+	}
 
 	// Package map should be a flowchart showing package hierarchy
 	pkgMap := slides[0].Mermaid
@@ -487,4 +518,205 @@ func TestPackageMapMultiPackage(t *testing.T) {
 	assert.True(t,
 		strings.Contains(pkgMap, "style ") || strings.Contains(pkgMap, "class "),
 		"should apply colors via style or class statements")
+
+	// Labels must use <br/> for line breaks, not literal \n
+	assert.NotContains(t, pkgMap, `\n`, "package map labels should not contain literal backslash-n")
+}
+
+func TestFormatPkgLabel(t *testing.T) {
+	// formatPkgLabel is unexported, so we test it indirectly via BuildSlides
+	// which calls generatePackageMapMermaid → renderTree → formatPkgLabel.
+	pkg := "example.com/proj/mypkg"
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 3})
+	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting to get package map
+
+	t.Run("both_ifaces_and_types", func(t *testing.T) {
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "B", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "Y", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "Z", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+			{Type: &typs[1], Interface: &ifaces[0]},
+			{Type: &typs[2], Interface: &ifaces[1]},
+		}
+		result := &analyzer.Result{
+			Interfaces: ifaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "mypkg<br/>2 ifaces, 3 types",
+			"label should use <br/> for line break with both ifaces and types")
+		assert.NotContains(t, pkgMap, `\n`,
+			"package map labels should not contain literal backslash-n")
+	})
+
+	t.Run("empty_result", func(t *testing.T) {
+		// An empty result (no interfaces, no types) produces a bare flowchart
+		// with no nodes — formatPkgLabel is never called.
+		result := &analyzer.Result{}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		// With no packages, the label is just "flowchart LR" with no stats
+		assert.Contains(t, pkgMap, "flowchart LR")
+		assert.NotContains(t, pkgMap, "<br/>",
+			"empty result should not produce any label with line break")
+	})
+
+	t.Run("only_interfaces", func(t *testing.T) {
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "B", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "C", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		// Need at least one relation and type to trigger splitting
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+		}
+		// Use a second package that has only interfaces (no types)
+		ifacePkg := "example.com/proj/ifonly"
+		ifaceOnlyIfaces := []analyzer.InterfaceDef{
+			{Name: "P", PkgPath: ifacePkg, PkgName: "ifonly"},
+			{Name: "Q", PkgPath: ifacePkg, PkgName: "ifonly"},
+		}
+		allIfaces := make([]analyzer.InterfaceDef, 0, len(ifaces)+len(ifaceOnlyIfaces))
+		allIfaces = append(allIfaces, ifaces...)
+		allIfaces = append(allIfaces, ifaceOnlyIfaces...)
+		result := &analyzer.Result{
+			Interfaces: allIfaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "ifonly<br/>2 ifaces",
+			"package with only interfaces should show iface count without types")
+		assert.NotContains(t, pkgMap, "ifonly<br/>2 ifaces,",
+			"should not have trailing comma when there are no types")
+	})
+
+	t.Run("only_types", func(t *testing.T) {
+		// A package that has only types (no interfaces)
+		typePkg := "example.com/proj/typonly"
+		ifaces := []analyzer.InterfaceDef{
+			{Name: "A", PkgPath: pkg, PkgName: "mypkg"},
+		}
+		typs := []analyzer.TypeDef{
+			{Name: "X", PkgPath: pkg, PkgName: "mypkg"},
+			{Name: "T1", PkgPath: typePkg, PkgName: "typonly"},
+			{Name: "T2", PkgPath: typePkg, PkgName: "typonly"},
+			{Name: "T3", PkgPath: typePkg, PkgName: "typonly"},
+		}
+		rels := []analyzer.Relation{
+			{Type: &typs[0], Interface: &ifaces[0]},
+		}
+		result := &analyzer.Result{
+			Interfaces: ifaces,
+			Types:      typs,
+			Relations:  rels,
+		}
+
+		slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+		require.GreaterOrEqual(t, len(slides), 1)
+		pkgMap := slides[0].Mermaid
+
+		assert.Contains(t, pkgMap, "typonly<br/>3 types",
+			"package with only types should show type count without ifaces")
+		assert.NotContains(t, pkgMap, `\n`,
+			"package map labels should not contain literal backslash-n")
+	})
+}
+
+func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
+	// Synthetic data: 2 hub interfaces, 3 types split across 2 slides.
+	// Interface A connects to X, Y, Z. Interface B connects only to Z.
+	// Slide 1 has X, Y → A should appear, B should NOT (orphaned).
+	// Slide 2 has Z → both A and B should appear.
+	pkg := "test"
+	makeIface := func(name string) analyzer.InterfaceDef {
+		return analyzer.InterfaceDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+	makeType := func(name string) analyzer.TypeDef {
+		return analyzer.TypeDef{Name: name, PkgPath: pkg, PkgName: pkg}
+	}
+
+	ifaceA := makeIface("A")
+	ifaceB := makeIface("B")
+	typeX := makeType("X")
+	typeY := makeType("Y")
+	typeZ := makeType("Z")
+
+	rels := []analyzer.Relation{
+		{Type: &typeX, Interface: &ifaceA},
+		{Type: &typeY, Interface: &ifaceA},
+		{Type: &typeZ, Interface: &ifaceA},
+		{Type: &typeZ, Interface: &ifaceB},
+	}
+
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{ifaceA, ifaceB},
+		Types:      []analyzer.TypeDef{typeX, typeY, typeZ},
+		Relations:  rels,
+	}
+
+	// With HubThreshold=1, both A (3 connections) and B (1 connection) qualify as
+	// hubs (>= 1), so both appear in HubKeys on every detail slide.
+	// The post-filter in subResultForSplitGroup removes B from slides where none of
+	// B's implementing types (only Z) are present.
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 1, ChunkSize: 2})
+	slideOpts := diagram.SlideOptions{Threshold: 0} // force splitting
+
+	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+
+	// Should have package map + at least 2 detail slides
+	require.GreaterOrEqual(t, len(slides), 3,
+		"expected package map + at least 2 detail slides")
+	assert.Equal(t, "Package Map", slides[0].Title)
+
+	// For each detail slide, verify orphaned interfaces are removed
+	for i := 1; i < len(slides); i++ {
+		mermaid := slides[i].Mermaid
+
+		// If B's only type (Z) is not on this slide, B should be absent
+		if !strings.Contains(mermaid, "test_Z") {
+			assert.NotContains(t, mermaid, "test_B",
+				"slide %d: B has no implementing types, should be absent", i)
+		} else {
+			assert.Contains(t, mermaid, "test_B",
+				"slide %d: Z is present, so B should be present", i)
+		}
+
+		// A connects to X, Y, Z — if none are present, A should be absent
+		hasAType := strings.Contains(mermaid, "test_X") ||
+			strings.Contains(mermaid, "test_Y") ||
+			strings.Contains(mermaid, "test_Z")
+		if hasAType {
+			assert.Contains(t, mermaid, "test_A",
+				"slide %d: has A's implementing types, so A should be present", i)
+		} else {
+			assert.NotContains(t, mermaid, "test_A",
+				"slide %d: no types for A, so A should be absent", i)
+		}
+	}
 }
