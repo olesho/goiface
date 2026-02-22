@@ -253,6 +253,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     .mermaid svg .edgeLabel { font-size: 16px !important; }
     .mermaid svg .label text { font-size: 18px !important; }
 
+    /* Left-align interface methods in class diagram nodes */
+    .mermaid svg .methods-group foreignObject div {
+      text-align: left !important;
+    }
+
     /* Color coding: interface blocks (blue) */
     .mermaid svg g.node.interfaceStyle > g:first-child > path:first-child {
       fill: #2374ab !important;
