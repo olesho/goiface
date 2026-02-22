@@ -70,6 +70,18 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       .placeholder-msg {
         color: #888;
       }
+      .entity-list-actions {
+        border-bottom-color: #444;
+        background-color: #2d2d44;
+      }
+      .entity-list-actions button {
+        background-color: #333;
+        color: #e0e0e0;
+        border-color: #555;
+      }
+      .entity-list-actions button:hover {
+        background-color: #444;
+      }
     }
 
     h1 {
@@ -178,6 +190,34 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       flex-shrink: 0;
     }
 
+    .entity-list-actions {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #e0e0e0;
+      position: sticky;
+      top: 0;
+      background-color: #fff;
+      z-index: 1;
+    }
+
+    .entity-list-actions button {
+      flex: 1;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #f8f9fa;
+      color: #212529;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    .entity-list-actions button:hover {
+      background-color: #e9ecef;
+    }
+
     .entity-list .pkg-name {
       color: #888;
       font-size: 0.75rem;
@@ -265,7 +305,12 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <!-- Implementations tab -->
   <div class="tab-panel" id="panel-impls">
-    <div class="entity-list" id="impls-list"></div>
+    <div class="entity-list" id="impls-list">
+      <div class="entity-list-actions">
+        <button id="impls-all" title="Select all implementations">All</button>
+        <button id="impls-clear" title="Deselect all implementations">Clear</button>
+      </div>
+    </div>
     <div class="diagram-viewport">
       <div class="diagram-container" id="impls-diagram-container">
         <div class="placeholder-msg" id="impls-placeholder">Select items from the list to view their relationships</div>
@@ -276,7 +321,12 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <!-- Interfaces tab -->
   <div class="tab-panel" id="panel-ifaces">
-    <div class="entity-list" id="ifaces-list"></div>
+    <div class="entity-list" id="ifaces-list">
+      <div class="entity-list-actions">
+        <button id="ifaces-all" title="Select all interfaces">All</button>
+        <button id="ifaces-clear" title="Deselect all interfaces">Clear</button>
+      </div>
+    </div>
     <div class="diagram-viewport">
       <div class="diagram-container" id="ifaces-diagram-container">
         <div class="placeholder-msg" id="ifaces-placeholder">Select items from the list to view their relationships</div>
@@ -335,6 +385,26 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         label.appendChild(cb);
         label.appendChild(span);
         ifacesList.appendChild(label);
+      });
+
+      // Bulk selection: Implementations
+      document.getElementById('impls-all').addEventListener('click', function() {
+        document.querySelectorAll('.impl-cb').forEach(function(cb) { cb.checked = true; });
+        onSelectionChange();
+      });
+      document.getElementById('impls-clear').addEventListener('click', function() {
+        document.querySelectorAll('.impl-cb').forEach(function(cb) { cb.checked = false; });
+        onSelectionChange();
+      });
+
+      // Bulk selection: Interfaces
+      document.getElementById('ifaces-all').addEventListener('click', function() {
+        document.querySelectorAll('.iface-cb').forEach(function(cb) { cb.checked = true; });
+        onSelectionChange();
+      });
+      document.getElementById('ifaces-clear').addEventListener('click', function() {
+        document.querySelectorAll('.iface-cb').forEach(function(cb) { cb.checked = false; });
+        onSelectionChange();
       });
 
       // Tab switching
