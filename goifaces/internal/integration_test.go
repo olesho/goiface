@@ -722,6 +722,127 @@ func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
 	}
 }
 
+func TestFilterBySelection(t *testing.T) {
+	// Build synthetic data: 2 types (A, B), 2 interfaces (I, J).
+	// A implements I and J. B implements J.
+	pkg := "test"
+	ifaceI := analyzer.InterfaceDef{Name: "I", PkgPath: pkg, PkgName: pkg}
+	ifaceJ := analyzer.InterfaceDef{Name: "J", PkgPath: pkg, PkgName: pkg}
+	typeA := analyzer.TypeDef{Name: "A", PkgPath: pkg, PkgName: pkg}
+	typeB := analyzer.TypeDef{Name: "B", PkgPath: pkg, PkgName: pkg}
+	typeC := analyzer.TypeDef{Name: "C", PkgPath: pkg, PkgName: pkg} // orphan: no relations
+
+	rels := []analyzer.Relation{
+		{Type: &typeA, Interface: &ifaceI},
+		{Type: &typeA, Interface: &ifaceJ},
+		{Type: &typeB, Interface: &ifaceJ},
+	}
+
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{ifaceI, ifaceJ},
+		Types:      []analyzer.TypeDef{typeA, typeB, typeC},
+		Relations:  rels,
+	}
+
+	t.Run("single_implementation_selected", func(t *testing.T) {
+		// Select only A → result has A, I, J and relations A→I, A→J. B excluded.
+		filtered := diagram.FilterBySelection(result, []string{"test_A"}, nil)
+		assert.Len(t, filtered.Types, 1)
+		assert.Equal(t, "A", filtered.Types[0].Name)
+		assert.Len(t, filtered.Interfaces, 2) // I and J
+		assert.Len(t, filtered.Relations, 2)  // A→I, A→J
+	})
+
+	t.Run("single_interface_selected", func(t *testing.T) {
+		// Select only I → result has I, A and relation A→I. B and J excluded.
+		filtered := diagram.FilterBySelection(result, nil, []string{"test_I"})
+		assert.Len(t, filtered.Interfaces, 1)
+		assert.Equal(t, "I", filtered.Interfaces[0].Name)
+		assert.Len(t, filtered.Types, 1)
+		assert.Equal(t, "A", filtered.Types[0].Name)
+		assert.Len(t, filtered.Relations, 1)
+	})
+
+	t.Run("multiple_selections_union", func(t *testing.T) {
+		// Select A and J → union: A→I, A→J, B→J. Result has A, B, I, J.
+		filtered := diagram.FilterBySelection(result, []string{"test_A"}, []string{"test_J"})
+		assert.Len(t, filtered.Types, 2)      // A and B
+		assert.Len(t, filtered.Interfaces, 2) // I and J
+		assert.Len(t, filtered.Relations, 3)  // A→I, A→J, B→J
+	})
+
+	t.Run("empty_selection", func(t *testing.T) {
+		// Select nothing → empty result.
+		filtered := diagram.FilterBySelection(result, nil, nil)
+		assert.Empty(t, filtered.Interfaces)
+		assert.Empty(t, filtered.Types)
+		assert.Empty(t, filtered.Relations)
+	})
+
+	t.Run("orphan_selection", func(t *testing.T) {
+		// Select C (no relations) → result has only C, no interfaces, no relations.
+		filtered := diagram.FilterBySelection(result, []string{"test_C"}, nil)
+		assert.Len(t, filtered.Types, 1)
+		assert.Equal(t, "C", filtered.Types[0].Name)
+		assert.Empty(t, filtered.Interfaces)
+		assert.Empty(t, filtered.Relations)
+	})
+
+	t.Run("cross_tab_selections", func(t *testing.T) {
+		// Select type B + interface I → union: A→I (from I), B→J (from B)
+		filtered := diagram.FilterBySelection(result, []string{"test_B"}, []string{"test_I"})
+		assert.Len(t, filtered.Relations, 2) // A→I, B→J
+		// Types: A (via I), B (selected)
+		assert.Len(t, filtered.Types, 2)
+		// Interfaces: I (selected), J (via B)
+		assert.Len(t, filtered.Interfaces, 2)
+	})
+}
+
+func TestPrepareInteractiveData(t *testing.T) {
+	pkg := "test"
+	iface := analyzer.InterfaceDef{
+		Name: "MyIface", PkgPath: pkg, PkgName: pkg,
+		Methods:    []analyzer.MethodSig{{Name: "Do", Signature: "Do(ctx context.Context) error"}},
+		SourceFile: "iface.go",
+	}
+	typ := analyzer.TypeDef{
+		Name: "MyType", PkgPath: pkg, PkgName: pkg,
+		SourceFile: "type.go",
+	}
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{iface},
+		Types:      []analyzer.TypeDef{typ},
+		Relations:  []analyzer.Relation{{Type: &typ, Interface: &iface}},
+	}
+
+	data := diagram.PrepareInteractiveData(result, diagram.DiagramOptions{MaxMethodsPerBox: 5})
+
+	require.Len(t, data.Interfaces, 1)
+	assert.Equal(t, "test_MyIface", data.Interfaces[0].ID)
+	assert.Equal(t, "MyIface", data.Interfaces[0].Name)
+	assert.Equal(t, "test", data.Interfaces[0].PkgName)
+	require.Len(t, data.Interfaces[0].Methods, 1)
+	assert.Equal(t, "Do(ctx context.Context) error", data.Interfaces[0].Methods[0])
+
+	require.Len(t, data.Types, 1)
+	assert.Equal(t, "test_MyType", data.Types[0].ID)
+
+	require.Len(t, data.Relations, 1)
+	assert.Equal(t, "test_MyType", data.Relations[0].TypeID)
+	assert.Equal(t, "test_MyIface", data.Relations[0].InterfaceID)
+}
+
+func TestNodeIDExported(t *testing.T) {
+	assert.Equal(t, "pkg_MyType", diagram.NodeID("pkg", "MyType"))
+	assert.Equal(t, "my_pkg_MyType", diagram.NodeID("my-pkg", "MyType"))
+}
+
+func TestSanitizeSignatureExported(t *testing.T) {
+	assert.Equal(t, "Do(x any) error", diagram.SanitizeSignature("Do(x interface{}) error"))
+	assert.Equal(t, "Chan(ch chan int)", diagram.SanitizeSignature("Chan(ch <-chan int)"))
+}
+
 func TestOrphanedTypesRemovedFromSlides(t *testing.T) {
 	// Scenario: type W only implements non-hub interface C. C is attached to
 	// a different chunk (the one containing Y, which also implements C). W is

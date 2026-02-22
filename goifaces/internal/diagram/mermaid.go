@@ -97,11 +97,11 @@ func GenerateMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	if len(ifaces) > 0 || len(typs) > 0 {
 		b.WriteString("\n")
 		for _, iface := range ifaces {
-			id := nodeID(iface.PkgName, iface.Name)
+			id := NodeID(iface.PkgName, iface.Name)
 			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" interfaceStyle", id))
 		}
 		for _, typ := range typs {
-			id := nodeID(typ.PkgName, typ.Name)
+			id := NodeID(typ.PkgName, typ.Name)
 			b.WriteString(fmt.Sprintf("\n    cssClass \"%s\" implStyle", id))
 		}
 	}
@@ -109,10 +109,10 @@ func GenerateMermaid(result *analyzer.Result, opts DiagramOptions) string {
 	return b.String()
 }
 
-// sanitizeSignature removes characters in method signatures that break Mermaid syntax.
+// SanitizeSignature removes characters in method signatures that break Mermaid syntax.
 // Mermaid treats {}, <>, and ~ as special in class diagram labels.
 // Uses only ASCII-safe replacements that work in both mmdc CLI and browser Mermaid.js.
-func sanitizeSignature(sig string) string {
+func SanitizeSignature(sig string) string {
 	// Replace <-chan with chan (drop direction indicator — Mermaid can't handle <).
 	sig = strings.ReplaceAll(sig, "<-chan", "chan")
 	// Replace interface{} with "any" BEFORE stripping braces — bare "interface"
@@ -130,8 +130,8 @@ func sanitizeID(s string) string {
 	return r.Replace(s)
 }
 
-// nodeID builds a sanitized node ID from pkgName and type/interface name.
-func nodeID(pkgName, name string) string {
+// NodeID builds a sanitized node ID from pkgName and type/interface name.
+func NodeID(pkgName, name string) string {
 	return sanitizeID(pkgName + "_" + name)
 }
 
@@ -142,7 +142,7 @@ func typeKey(pkgPath, name string) string {
 
 // writeInterfaceBlock writes a Mermaid class block for an interface.
 func writeInterfaceBlock(b *strings.Builder, iface analyzer.InterfaceDef, opts DiagramOptions) {
-	id := nodeID(iface.PkgName, iface.Name)
+	id := NodeID(iface.PkgName, iface.Name)
 	b.WriteString(fmt.Sprintf("    class %s {\n", id))
 	b.WriteString("        <<interface>>\n")
 	if iface.SourceFile != "" {
@@ -156,7 +156,7 @@ func writeInterfaceBlock(b *strings.Builder, iface analyzer.InterfaceDef, opts D
 // Only the type name is shown — methods are omitted because they're
 // already listed in the interface blocks this type implements.
 func writeTypeBlock(b *strings.Builder, typ analyzer.TypeDef) {
-	id := nodeID(typ.PkgName, typ.Name)
+	id := NodeID(typ.PkgName, typ.Name)
 	b.WriteString(fmt.Sprintf("    class %s {\n", id))
 	if typ.SourceFile != "" {
 		b.WriteString("        %% file: " + typ.SourceFile + "\n")
@@ -174,7 +174,7 @@ func writeMethodLines(b *strings.Builder, methods []MethodSig, opts DiagramOptio
 	}
 
 	for i := 0; i < limit; i++ {
-		b.WriteString(fmt.Sprintf("        +%s\n", sanitizeSignature(methods[i].Signature)))
+		b.WriteString(fmt.Sprintf("        +%s\n", SanitizeSignature(methods[i].Signature)))
 	}
 	if truncated {
 		b.WriteString("        ...\n")
@@ -183,8 +183,8 @@ func writeMethodLines(b *strings.Builder, methods []MethodSig, opts DiagramOptio
 
 // writeRelation writes a single Mermaid relation line.
 func writeRelation(b *strings.Builder, rel analyzer.Relation) {
-	typeID := nodeID(rel.Type.PkgName, rel.Type.Name)
-	ifaceID := nodeID(rel.Interface.PkgName, rel.Interface.Name)
+	typeID := NodeID(rel.Type.PkgName, rel.Type.Name)
+	ifaceID := NodeID(rel.Interface.PkgName, rel.Interface.Name)
 	line := fmt.Sprintf("    %s --|> %s", typeID, ifaceID)
 	b.WriteString(line)
 }
