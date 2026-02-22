@@ -281,6 +281,110 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     .mermaid svg g.node.implStyle .nodeLabel {
       color: #fff !important;
     }
+
+    /* Treemap styles */
+    .treemap-viewport {
+      flex: 1;
+      overflow: hidden;
+      padding: 0.5rem;
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 200px);
+    }
+
+    .treemap-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .treemap-node {
+      position: absolute;
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 3px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      cursor: default;
+      transition: border-color 0.15s;
+    }
+
+    .treemap-node:hover {
+      border-color: rgba(0,0,0,0.5);
+      z-index: 10;
+    }
+
+    .treemap-node .tm-name {
+      font-weight: 600;
+      font-size: 0.85rem;
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 95%;
+    }
+
+    .treemap-node .tm-stats {
+      font-size: 0.7rem;
+      opacity: 0.7;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 95%;
+    }
+
+    .treemap-group {
+      position: absolute;
+      overflow: hidden;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+    }
+
+    .treemap-group-label {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: rgba(0,0,0,0.06);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      z-index: 1;
+    }
+
+    .treemap-tooltip {
+      position: fixed;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      font-size: 0.8rem;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 100;
+      white-space: nowrap;
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .treemap-node {
+        border-color: rgba(255,255,255,0.15);
+        color: #222 !important;
+      }
+      .treemap-node:hover {
+        border-color: rgba(255,255,255,0.5);
+      }
+      .treemap-group {
+        border-color: rgba(255,255,255,0.2);
+      }
+      .treemap-group-label {
+        background: rgba(255,255,255,0.08);
+        color: #e0e0e0;
+      }
+    }
   </style>
 </head>
 <body>
@@ -288,6 +392,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="pkgmap">Package Map</button>
+    <button class="tab-btn" data-tab="pkgmap-html">Package Map (html)</button>
     <button class="tab-btn" data-tab="impls">Implementations</button>
     <button class="tab-btn" data-tab="ifaces">Interfaces</button>
   </div>
@@ -307,6 +412,15 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       </div>
     </div>
   </div>
+
+  <!-- Package Map HTML tab -->
+  <div class="tab-panel full-width" id="panel-pkgmap-html">
+    <div class="treemap-viewport" id="pkgmap-html-viewport">
+      <div class="treemap-container" id="pkgmap-html-container"></div>
+    </div>
+  </div>
+
+  <div class="treemap-tooltip" id="treemap-tooltip"></div>
 
   <!-- Implementations tab -->
   <div class="tab-panel" id="panel-impls">
@@ -356,9 +470,265 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
     (function() {
       var data = {{.DataJSON}};
+      var pkgMapData = {{.PackageMapJSON}};
       var currentTab = 'pkgmap';
       var currentMermaidSource = '';
       var pkgMapRendered = false;
+      var pkgMapHtmlRendered = false;
+
+      // Pastel palette matching Go-side colors
+      var treemapPalette = [
+        {fill: '#e8f4fd', stroke: '#b8d4e8', text: '#333333'},
+        {fill: '#e8f5e9', stroke: '#b8d8ba', text: '#333333'},
+        {fill: '#fff3e0', stroke: '#e8c9a0', text: '#333333'},
+        {fill: '#f3e5f5', stroke: '#d1b3d8', text: '#333333'},
+        {fill: '#fce4ec', stroke: '#e8b0bf', text: '#333333'},
+        {fill: '#e0f2f1', stroke: '#b0d4d1', text: '#333333'},
+        {fill: '#fff9c4', stroke: '#e8dea0', text: '#333333'},
+        {fill: '#e8eaf6', stroke: '#b8bce8', text: '#333333'},
+        {fill: '#efebe9', stroke: '#c8b8ad', text: '#333333'},
+        {fill: '#f1f8e9', stroke: '#c4dba0', text: '#333333'}
+      ];
+
+      // Squarified treemap algorithm
+      function squarify(nodes, rect) {
+        if (!nodes || nodes.length === 0) return [];
+        var total = 0;
+        for (var i = 0; i < nodes.length; i++) total += nodes[i].value;
+        if (total <= 0) return [];
+
+        var results = [];
+        var remaining = nodes.slice().sort(function(a, b) { return b.value - a.value; });
+        var r = {x: rect.x, y: rect.y, w: rect.w, h: rect.h};
+        var remainingTotal = total;
+
+        while (remaining.length > 0) {
+          var short = Math.min(r.w, r.h);
+          if (short <= 0) break;
+          var row = [remaining[0]];
+          remaining.splice(0, 1);
+          var rowSum = row[0].value;
+
+          var worst = worstRatio(row, rowSum, short, remainingTotal, r);
+
+          while (remaining.length > 0) {
+            var candidate = remaining[0];
+            var newRow = row.concat([candidate]);
+            var newSum = rowSum + candidate.value;
+            var newWorst = worstRatio(newRow, newSum, short, remainingTotal, r);
+            if (newWorst <= worst) {
+              row.push(candidate);
+              remaining.splice(0, 1);
+              rowSum = newSum;
+              worst = newWorst;
+            } else {
+              break;
+            }
+          }
+
+          // Layout this row
+          var rowArea = (rowSum / remainingTotal) * r.w * r.h;
+          var horizontal = r.w >= r.h;
+          var rowLen = horizontal ? rowArea / r.h : rowArea / r.w;
+          if (!isFinite(rowLen) || rowLen <= 0) rowLen = 0;
+
+          var offset = 0;
+          for (var j = 0; j < row.length; j++) {
+            var fraction = rowSum > 0 ? row[j].value / rowSum : 1 / row.length;
+            var span = horizontal ? r.h * fraction : r.w * fraction;
+            var item = {
+              data: row[j],
+              x: horizontal ? r.x : r.x + offset,
+              y: horizontal ? r.y + offset : r.y,
+              w: horizontal ? rowLen : span,
+              h: horizontal ? span : rowLen
+            };
+            results.push(item);
+            offset += span;
+          }
+
+          remainingTotal -= rowSum;
+          if (horizontal) {
+            r = {x: r.x + rowLen, y: r.y, w: r.w - rowLen, h: r.h};
+          } else {
+            r = {x: r.x, y: r.y + rowLen, w: r.w, h: r.h - rowLen};
+          }
+        }
+        return results;
+      }
+
+      function worstRatio(row, rowSum, short, total, rect) {
+        var area = (rowSum / total) * rect.w * rect.h;
+        var rowLen = short > 0 ? area / short : 0;
+        var worst = 0;
+        for (var i = 0; i < row.length; i++) {
+          var fraction = rowSum > 0 ? row[i].value / rowSum : 1 / row.length;
+          var span = short * fraction;
+          var ratio = rowLen > span ? rowLen / (span > 0 ? span : 1) : span / (rowLen > 0 ? rowLen : 1);
+          if (ratio > worst) worst = ratio;
+        }
+        return worst;
+      }
+
+      // Flatten deep nesting: cap at maxDepth levels
+      function flattenTree(nodes, maxDepth) {
+        if (!nodes) return [];
+        return nodes.map(function(n) {
+          var clone = {name: n.name, relPath: n.relPath, pkgPath: n.pkgPath, interfaces: n.interfaces, types: n.types, value: n.value};
+          if (n.children && n.children.length > 0) {
+            if (maxDepth <= 1) {
+              // Flatten children into this node
+              clone.children = null;
+            } else {
+              clone.children = flattenTree(n.children, maxDepth - 1);
+            }
+          }
+          return clone;
+        });
+      }
+
+      var tooltip = document.getElementById('treemap-tooltip');
+
+      function renderTreemap(container, nodes, rect, depth, colorIdx) {
+        if (!nodes || nodes.length === 0) {
+          if (depth === 0) {
+            container.innerHTML = '<div class="placeholder-msg">No packages found</div>';
+          }
+          return colorIdx;
+        }
+
+        var positioned = squarify(nodes, rect);
+        for (var i = 0; i < positioned.length; i++) {
+          var p = positioned[i];
+          var d = p.data;
+          var ci = (colorIdx + i) % treemapPalette.length;
+          var color = treemapPalette[ci];
+
+          if (d.children && d.children.length > 0) {
+            // Group node
+            var group = document.createElement('div');
+            group.className = 'treemap-group';
+            group.style.left = p.x + 'px';
+            group.style.top = p.y + 'px';
+            group.style.width = Math.max(0, p.w) + 'px';
+            group.style.height = Math.max(0, p.h) + 'px';
+            group.style.background = color.fill;
+
+            var label = document.createElement('div');
+            label.className = 'treemap-group-label';
+            label.textContent = d.name;
+            label.style.color = color.text;
+            group.appendChild(label);
+
+            var headerH = 20;
+            var innerRect = {x: 1, y: headerH, w: Math.max(0, p.w - 2), h: Math.max(0, p.h - headerH - 1)};
+
+            // If this node is also a package, add a self node
+            if (d.interfaces > 0 || d.types > 0) {
+              var selfValue = d.interfaces + d.types;
+              if (selfValue < 1) selfValue = 1;
+              var childrenValue = 0;
+              for (var k = 0; k < d.children.length; k++) childrenValue += d.children[k].value;
+              var selfFraction = selfValue / (selfValue + childrenValue);
+              var selfH = innerRect.h * selfFraction;
+
+              var selfNode = document.createElement('div');
+              selfNode.className = 'treemap-node';
+              selfNode.style.left = innerRect.x + 'px';
+              selfNode.style.top = innerRect.y + 'px';
+              selfNode.style.width = innerRect.w + 'px';
+              selfNode.style.height = Math.max(0, selfH) + 'px';
+              selfNode.style.background = treemapPalette[(ci + 1) % treemapPalette.length].fill;
+              selfNode.style.color = color.text;
+
+              if (selfH >= 20) {
+                var sn = document.createElement('div');
+                sn.className = 'tm-name';
+                sn.textContent = d.relPath || d.name;
+                selfNode.appendChild(sn);
+              }
+              if (selfH >= 35) {
+                var ss = document.createElement('div');
+                ss.className = 'tm-stats';
+                ss.textContent = statsText(d);
+                selfNode.appendChild(ss);
+              }
+              attachTooltip(selfNode, d);
+              group.appendChild(selfNode);
+
+              innerRect = {x: innerRect.x, y: innerRect.y + selfH, w: innerRect.w, h: Math.max(0, innerRect.h - selfH)};
+            }
+
+            colorIdx = renderTreemap(group, d.children, innerRect, depth + 1, ci + 1);
+            container.appendChild(group);
+          } else {
+            // Leaf node
+            var node = document.createElement('div');
+            node.className = 'treemap-node';
+            node.style.left = p.x + 'px';
+            node.style.top = p.y + 'px';
+            node.style.width = Math.max(0, p.w) + 'px';
+            node.style.height = Math.max(0, p.h) + 'px';
+            node.style.background = color.fill;
+            node.style.color = color.text;
+
+            if (p.h >= 20) {
+              var nameEl = document.createElement('div');
+              nameEl.className = 'tm-name';
+              nameEl.textContent = d.relPath || d.name;
+              node.appendChild(nameEl);
+            }
+            if (p.h >= 35) {
+              var statsEl = document.createElement('div');
+              statsEl.className = 'tm-stats';
+              statsEl.textContent = statsText(d);
+              node.appendChild(statsEl);
+            }
+            attachTooltip(node, d);
+            container.appendChild(node);
+          }
+        }
+        return colorIdx + positioned.length;
+      }
+
+      function statsText(d) {
+        var parts = [];
+        if (d.interfaces > 0) parts.push(d.interfaces + ' iface' + (d.interfaces > 1 ? 's' : ''));
+        if (d.types > 0) parts.push(d.types + ' type' + (d.types > 1 ? 's' : ''));
+        return parts.join(', ') || '(empty)';
+      }
+
+      function attachTooltip(el, d) {
+        el.addEventListener('mouseenter', function(e) {
+          var text = (d.relPath || d.name) + ': ' + statsText(d);
+          if (d.pkgPath) text = d.pkgPath + '\n' + statsText(d);
+          tooltip.textContent = text;
+          tooltip.style.whiteSpace = d.pkgPath ? 'pre' : 'nowrap';
+          tooltip.style.display = 'block';
+          positionTooltip(e);
+        });
+        el.addEventListener('mousemove', positionTooltip);
+        el.addEventListener('mouseleave', function() {
+          tooltip.style.display = 'none';
+        });
+      }
+
+      function positionTooltip(e) {
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY + 12) + 'px';
+      }
+
+      var resizeTimer = null;
+      function layoutTreemap() {
+        var viewport = document.getElementById('pkgmap-html-viewport');
+        var container = document.getElementById('pkgmap-html-container');
+        container.innerHTML = '';
+        var w = viewport.clientWidth - 16;
+        var h = viewport.clientHeight - 16;
+        if (w <= 0 || h <= 0) return;
+        var nodes = flattenTree(pkgMapData, 3);
+        renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
+      }
 
       // Build checkbox lists
       var implsList = document.getElementById('impls-list');
@@ -372,7 +742,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         cb.className = 'impl-cb';
         cb.addEventListener('change', onSelectionChange);
         var span = document.createElement('span');
-        span.innerHTML = t.name + ' <span class="pkg-name">' + t.pkgName + '</span>';
+        span.appendChild(document.createTextNode(t.name + ' '));
+        var pkg = document.createElement('span');
+        pkg.className = 'pkg-name';
+        pkg.textContent = t.pkgName;
+        span.appendChild(pkg);
         label.appendChild(cb);
         label.appendChild(span);
         implsList.appendChild(label);
@@ -386,7 +760,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         cb.className = 'iface-cb';
         cb.addEventListener('change', onSelectionChange);
         var span = document.createElement('span');
-        span.innerHTML = iface.name + ' <span class="pkg-name">' + iface.pkgName + '</span>';
+        span.appendChild(document.createTextNode(iface.name + ' '));
+        var pkg = document.createElement('span');
+        pkg.className = 'pkg-name';
+        pkg.textContent = iface.pkgName;
+        span.appendChild(pkg);
         label.appendChild(cb);
         label.appendChild(span);
         ifacesList.appendChild(label);
@@ -429,6 +807,12 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
         if (tab === 'pkgmap' && !pkgMapRendered) {
           renderPackageMap();
+        }
+        if (tab === 'pkgmap-html' && !pkgMapHtmlRendered) {
+          requestAnimationFrame(function() {
+            layoutTreemap();
+            pkgMapHtmlRendered = true;
+          });
         }
       }
 
@@ -641,6 +1025,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       function getActiveContainer() {
         if (currentTab === 'pkgmap') return document.getElementById('pkgmap-container');
+        if (currentTab === 'pkgmap-html') return document.getElementById('pkgmap-html-container');
         if (currentTab === 'ifaces') return document.getElementById('ifaces-diagram-container');
         return document.getElementById('impls-diagram-container');
       }
@@ -666,6 +1051,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         var src = '';
         if (currentTab === 'pkgmap') {
           src = document.getElementById('pkgmap-mermaid').getAttribute('data-original') || '';
+        } else if (currentTab === 'pkgmap-html') {
+          src = buildTreemapText(pkgMapData, '');
         } else {
           src = currentMermaidSource;
         }
@@ -677,6 +1064,29 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
           setTimeout(function() { btn.textContent = orig; }, 1500);
         });
       });
+      function buildTreemapText(nodes, indent) {
+        if (!nodes) return '';
+        var lines = [];
+        for (var i = 0; i < nodes.length; i++) {
+          var n = nodes[i];
+          lines.push(indent + (n.relPath || n.name) + ': ' + statsText(n));
+          if (n.children) {
+            lines.push(buildTreemapText(n.children, indent + '  '));
+          }
+        }
+        return lines.join('\n');
+      }
+
+      // ResizeObserver for treemap recalculation
+      var resizeObs = new ResizeObserver(function() {
+        if (!pkgMapHtmlRendered) return;
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+          layoutTreemap();
+        }, 100);
+      });
+      var vp = document.getElementById('pkgmap-html-viewport');
+      if (vp) resizeObs.observe(vp);
     })();
   </script>
 </body>
@@ -687,6 +1097,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 type interactiveData struct {
 	PackageMapMermaid string
 	DataJSON          template.JS
+	PackageMapJSON    template.JS
 	RepoAddress       string
 }
 
@@ -712,9 +1123,15 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 		return fmt.Errorf("marshaling interactive data to JSON: %w", err)
 	}
 
+	pkgMapBytes, err := json.Marshal(data.PackageMapNodes)
+	if err != nil {
+		return fmt.Errorf("marshaling package map data to JSON: %w", err)
+	}
+
 	templateData := interactiveData{
 		PackageMapMermaid: data.PackageMapMermaid,
-		DataJSON:          template.JS(jsonBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
+		DataJSON:          template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
+		PackageMapJSON:    template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
 		RepoAddress:       data.RepoAddress,
 	}
 

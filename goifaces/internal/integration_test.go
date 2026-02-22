@@ -959,3 +959,95 @@ func TestOrphanedTypesRemovedFromSlides(t *testing.T) {
 		}
 	}
 }
+
+func TestPreparePackageMapData(t *testing.T) {
+	// Multi-package input:
+	//   example.com/mylib/io          — 2 interfaces, 1 type
+	//   example.com/mylib/http        — 1 interface,  1 type
+	//   example.com/mylib/http/router — 0 interfaces, 1 type
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{
+			{Name: "Reader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+			{Name: "Writer", PkgPath: "example.com/mylib/io", PkgName: "io"},
+			{Name: "Handler", PkgPath: "example.com/mylib/http", PkgName: "http"},
+		},
+		Types: []analyzer.TypeDef{
+			{Name: "FileReader", PkgPath: "example.com/mylib/io", PkgName: "io"},
+			{Name: "Server", PkgPath: "example.com/mylib/http", PkgName: "http"},
+			{Name: "Mux", PkgPath: "example.com/mylib/http/router", PkgName: "router"},
+		},
+	}
+
+	nodes := diagram.PreparePackageMapData(result)
+
+	// Should return non-nil slice
+	require.NotNil(t, nodes)
+
+	// Top-level should have two entries: "http" and "io" (sorted alphabetically)
+	require.Len(t, nodes, 2, "expected two top-level nodes: http, io")
+	assert.Equal(t, "http", nodes[0].Name)
+	assert.Equal(t, "io", nodes[1].Name)
+
+	// "io" is a leaf — relPath should be "io" (common prefix "example.com/mylib/" stripped)
+	ioNode := nodes[1]
+	assert.Equal(t, "io", ioNode.RelPath)
+	assert.Equal(t, "example.com/mylib/io", ioNode.PkgPath)
+	assert.Equal(t, 2, ioNode.Interfaces)
+	assert.Equal(t, 1, ioNode.Types)
+	assert.Equal(t, 3, ioNode.Value, "leaf value = interfaces + types")
+	assert.Nil(t, ioNode.Children, "io has no children")
+
+	// "http" is a parent with a child "router"
+	httpNode := nodes[0]
+	assert.Equal(t, "http", httpNode.Name)
+	assert.Equal(t, "http", httpNode.RelPath)
+	assert.Equal(t, "example.com/mylib/http", httpNode.PkgPath)
+	assert.Equal(t, 1, httpNode.Interfaces)
+	assert.Equal(t, 1, httpNode.Types)
+	require.Len(t, httpNode.Children, 1, "http should have one child (router)")
+
+	routerNode := httpNode.Children[0]
+	assert.Equal(t, "router", routerNode.Name)
+	assert.Equal(t, "http/router", routerNode.RelPath)
+	assert.Equal(t, "example.com/mylib/http/router", routerNode.PkgPath)
+	assert.Equal(t, 0, routerNode.Interfaces)
+	assert.Equal(t, 1, routerNode.Types)
+	assert.Equal(t, 1, routerNode.Value, "leaf value = max(0+1, 1) = 1")
+	assert.Nil(t, routerNode.Children)
+
+	// Parent value = own (1+1=2) + children sum (1) = 3
+	assert.Equal(t, 3, httpNode.Value, "parent value = own interfaces+types + sum of children values")
+}
+
+func TestPreparePackageMapDataEmpty(t *testing.T) {
+	result := &analyzer.Result{}
+	nodes := diagram.PreparePackageMapData(result)
+	assert.Nil(t, nodes, "empty result should produce nil slice")
+}
+
+func TestPreparePackageMapDataSinglePackage(t *testing.T) {
+	result := &analyzer.Result{
+		Interfaces: []analyzer.InterfaceDef{
+			{Name: "Store", PkgPath: "example.com/app/db", PkgName: "db"},
+		},
+		Types: []analyzer.TypeDef{
+			{Name: "PgStore", PkgPath: "example.com/app/db", PkgName: "db"},
+			{Name: "MockStore", PkgPath: "example.com/app/db", PkgName: "db"},
+		},
+	}
+
+	nodes := diagram.PreparePackageMapData(result)
+
+	require.NotNil(t, nodes)
+	require.Len(t, nodes, 1, "single package should produce one root node")
+
+	node := nodes[0]
+	assert.Equal(t, "db", node.Name)
+	// With a single package, the common prefix is the full path; lastSegment is used
+	assert.Equal(t, "db", node.RelPath)
+	assert.Equal(t, "example.com/app/db", node.PkgPath)
+	assert.Equal(t, 1, node.Interfaces)
+	assert.Equal(t, 2, node.Types)
+	assert.Equal(t, 3, node.Value, "value = 1 interface + 2 types = 3")
+	assert.Nil(t, node.Children)
+}
