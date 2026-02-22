@@ -367,3 +367,110 @@ func lastSegment(path string) string {
 	}
 	return path
 }
+
+// PreparePackageMapData converts an analyzer.Result into a tree of PackageMapNode
+// suitable for client-side treemap rendering. It reuses the same tree-building
+// logic as GeneratePackageMapMermaid but outputs a JSON-serializable structure.
+func PreparePackageMapData(result *analyzer.Result) []*PackageMapNode {
+	// Collect stats per package path
+	stats := make(map[string]*pkgStats)
+	for _, iface := range result.Interfaces {
+		s, ok := stats[iface.PkgPath]
+		if !ok {
+			s = &pkgStats{}
+			stats[iface.PkgPath] = s
+		}
+		s.Interfaces++
+	}
+	for _, typ := range result.Types {
+		s, ok := stats[typ.PkgPath]
+		if !ok {
+			s = &pkgStats{}
+			stats[typ.PkgPath] = s
+		}
+		s.Types++
+	}
+
+	if len(stats) == 0 {
+		return nil
+	}
+
+	// Collect and sort package paths
+	var paths []string
+	for p := range stats {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	// Find common prefix to strip (module path)
+	prefix := longestCommonPrefix(paths)
+	if idx := strings.LastIndex(prefix, "/"); idx >= 0 {
+		prefix = prefix[:idx+1]
+	}
+
+	// Build tree
+	root := &pkgNode{children: make(map[string]*pkgNode)}
+	for _, p := range paths {
+		rel := strings.TrimPrefix(p, prefix)
+		if rel == "" {
+			rel = lastSegment(p)
+		}
+		parts := strings.Split(rel, "/")
+		insertNode(root, parts, p, rel, stats[p])
+	}
+
+	return convertPkgTree(root)
+}
+
+// convertPkgTree converts a pkgNode tree into a slice of PackageMapNode.
+func convertPkgTree(node *pkgNode) []*PackageMapNode {
+	var names []string
+	for name := range node.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var result []*PackageMapNode
+	for _, name := range names {
+		child := node.children[name]
+		pmn := &PackageMapNode{
+			Name:    child.name,
+			RelPath: child.relPath,
+			PkgPath: child.pkgPath,
+		}
+		if child.stats != nil {
+			pmn.Interfaces = child.stats.Interfaces
+			pmn.Types = child.stats.Types
+		}
+
+		if len(child.children) > 0 {
+			pmn.Children = convertPkgTree(child)
+		}
+
+		// Compute value: for leaves, max(interfaces+types, 1); for parents, sum of children
+		if len(pmn.Children) > 0 {
+			v := 0
+			for _, c := range pmn.Children {
+				v += c.Value
+			}
+			// If this node is also a package itself, add its own value
+			if child.stats != nil {
+				own := child.stats.Interfaces + child.stats.Types
+				if own < 1 {
+					own = 1
+				}
+				v += own
+			}
+			pmn.Value = v
+		} else {
+			v := pmn.Interfaces + pmn.Types
+			if v < 1 {
+				v = 1
+			}
+			pmn.Value = v
+		}
+
+		result = append(result, pmn)
+	}
+	return result
+}

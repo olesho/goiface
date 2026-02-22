@@ -166,6 +166,7 @@ func main() {
 		pkgMapMermaid := diagram.GeneratePackageMapMermaid(result, diagramOpts)
 		interactiveData := diagram.PrepareInteractiveData(result, diagramOpts)
 		interactiveData.PackageMapMermaid = pkgMapMermaid
+		interactiveData.PackageMapNodes = diagram.PreparePackageMapData(result)
 		interactiveData.RepoAddress = input
 
 		openBrowser := !*noBrowser

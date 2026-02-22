@@ -29,9 +29,21 @@ type InteractiveRelation struct {
 	InterfaceID string `json:"interfaceId"`
 }
 
+// PackageMapNode represents a node in the package hierarchy for the HTML treemap.
+type PackageMapNode struct {
+	Name       string            `json:"name"`
+	RelPath    string            `json:"relPath"`
+	PkgPath    string            `json:"pkgPath"`
+	Interfaces int               `json:"interfaces"`
+	Types      int               `json:"types"`
+	Value      int               `json:"value"`
+	Children   []*PackageMapNode `json:"children,omitempty"`
+}
+
 // InteractiveData holds all data needed for the interactive tabbed UI.
 type InteractiveData struct {
 	PackageMapMermaid string                 `json:"packageMapMermaid"`
+	PackageMapNodes   []*PackageMapNode      `json:"packageMapNodes,omitempty"`
 	Interfaces        []InteractiveInterface `json:"interfaces"`
 	Types             []InteractiveType      `json:"types"`
 	Relations         []InteractiveRelation  `json:"relations"`

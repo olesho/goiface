@@ -64,6 +64,7 @@ Generates Mermaid `classDiagram` syntax from analysis results. Uses `direction L
 Key exported functions:
 - `GenerateMermaid()` — full class diagram from analysis results
 - `GeneratePackageMapMermaid()` — flowchart showing repository package hierarchy with per-package interface/type counts; each package node gets a distinct pastel background color from a fixed palette
+- `PreparePackageMapData()` — converts analysis results into a `[]*PackageMapNode` tree for client-side HTML treemap rendering; reuses the same tree-building logic as `GeneratePackageMapMermaid`
 - `PrepareInteractiveData()` — converts analysis results into `InteractiveData` struct with sanitized IDs and method signatures for the interactive web UI
 - `FilterBySelection()` — filters a Result to only include selected items and their direct relations (used for testing the client-side JS filtering logic)
 - `NodeID()` / `SanitizeSignature()` — exported utilities for consistent node ID and method signature handling
@@ -76,8 +77,9 @@ Slide splitting strategies. Defines the `Splitter` interface and `Group` type.
 - **HubAndSpoke** — identifies high-connectivity interfaces (hubs, connections >= threshold) that repeat on every detail slide, then chunks remaining types (spokes) into groups. Non-hub interfaces are attached to the chunk containing their connected types. A post-filter in `subResultForSplitGroup` removes orphaned interfaces and types that have no surviving relations on a given slide.
 
 ### `internal/server`
-HTTP server serving an interactive tabbed HTML UI with embedded Mermaid.js rendering. Three tabs:
-- **Package Map** — static flowchart showing repository package hierarchy
+HTTP server serving an interactive tabbed HTML UI with embedded Mermaid.js rendering. Four tabs:
+- **Package Map** — static Mermaid flowchart showing repository package hierarchy
+- **Package Map (html)** — native HTML/CSS squarified treemap visualization of the package hierarchy; uses vanilla JS with no external libraries; fills the entire viewport with proportionally-sized rectangles
 - **Implementations** — scrollable checkbox list of all implementation types; selecting items dynamically generates a Mermaid class diagram showing only selected items and their direct relations
 - **Interfaces** — scrollable checkbox list of all interfaces with the same filtering behavior
 
