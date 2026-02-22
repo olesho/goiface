@@ -589,6 +589,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       var tooltip = document.getElementById('treemap-tooltip');
 
+      var TREEMAP_GAP = 2;
+
       function renderTreemap(container, nodes, rect, depth, colorIdx) {
         if (!nodes || nodes.length === 0) {
           if (depth === 0) {
@@ -608,10 +610,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             // Group node
             var group = document.createElement('div');
             group.className = 'treemap-group';
-            group.style.left = p.x + 'px';
-            group.style.top = p.y + 'px';
-            group.style.width = Math.max(0, p.w) + 'px';
-            group.style.height = Math.max(0, p.h) + 'px';
+            group.style.left = (p.x + TREEMAP_GAP) + 'px';
+            group.style.top = (p.y + TREEMAP_GAP) + 'px';
+            group.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
+            group.style.height = Math.max(0, p.h - 2 * TREEMAP_GAP) + 'px';
             group.style.background = color.fill;
 
             var label = document.createElement('div');
@@ -621,7 +623,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             group.appendChild(label);
 
             var headerH = 20;
-            var innerRect = {x: 1, y: headerH, w: Math.max(0, p.w - 2), h: Math.max(0, p.h - headerH - 1)};
+            var gw = Math.max(0, p.w - 2 * TREEMAP_GAP);
+            var gh = Math.max(0, p.h - 2 * TREEMAP_GAP);
+            var innerPad = 3;
+            var innerRect = {x: innerPad, y: headerH, w: Math.max(0, gw - 2 * innerPad), h: Math.max(0, gh - headerH - innerPad)};
 
             // If this node is also a package, add a self node
             if (d.interfaces > 0 || d.types > 0) {
@@ -641,13 +646,13 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               selfNode.style.background = treemapPalette[(ci + 1) % treemapPalette.length].fill;
               selfNode.style.color = color.text;
 
-              if (selfH >= 20) {
+              if (selfH >= 16) {
                 var sn = document.createElement('div');
                 sn.className = 'tm-name';
                 sn.textContent = d.relPath || d.name;
                 selfNode.appendChild(sn);
               }
-              if (selfH >= 35) {
+              if (selfH >= 31) {
                 var ss = document.createElement('div');
                 ss.className = 'tm-stats';
                 ss.textContent = statsText(d);
@@ -665,20 +670,20 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             // Leaf node
             var node = document.createElement('div');
             node.className = 'treemap-node';
-            node.style.left = p.x + 'px';
-            node.style.top = p.y + 'px';
-            node.style.width = Math.max(0, p.w) + 'px';
-            node.style.height = Math.max(0, p.h) + 'px';
+            node.style.left = (p.x + TREEMAP_GAP) + 'px';
+            node.style.top = (p.y + TREEMAP_GAP) + 'px';
+            node.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
+            node.style.height = Math.max(0, p.h - 2 * TREEMAP_GAP) + 'px';
             node.style.background = color.fill;
             node.style.color = color.text;
 
-            if (p.h >= 20) {
+            if ((p.h - 2 * TREEMAP_GAP) >= 20) {
               var nameEl = document.createElement('div');
               nameEl.className = 'tm-name';
               nameEl.textContent = d.relPath || d.name;
               node.appendChild(nameEl);
             }
-            if (p.h >= 35) {
+            if ((p.h - 2 * TREEMAP_GAP) >= 35) {
               var statsEl = document.createElement('div');
               statsEl.className = 'tm-stats';
               statsEl.textContent = statsText(d);
