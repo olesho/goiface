@@ -394,6 +394,52 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
       text-align: center;
     }
 
+    .top-menu {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1rem;
+      border-bottom: 2px solid #dee2e6;
+    }
+
+    .top-menu button {
+      padding: 0.5rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      background: none;
+      color: #6c757d;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .top-menu button:hover {
+      color: #212529;
+    }
+
+    .top-menu button.active {
+      color: #2374ab;
+      border-bottom-color: #2374ab;
+      font-weight: 600;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .top-menu {
+        border-bottom-color: #444;
+      }
+      .top-menu button {
+        color: #888;
+      }
+      .top-menu button:hover {
+        color: #e0e0e0;
+      }
+      .top-menu button.active {
+        color: #5ba8d9;
+        border-bottom-color: #5ba8d9;
+      }
+    }
+
     .slide-title {
       font-size: 1.1rem;
       font-weight: 600;
@@ -460,14 +506,22 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
 <body>
   <h1>goifaces — {{.RepoAddress}}</h1>
 
-  <div class="controls">
+  <div class="top-menu">
+    <button id="tab-pkgmap" class="active">Package Map</button>
+    <button id="tab-entities">Entities</button>
+  </div>
+
+  <div class="controls" id="entity-controls" style="display:none;">
     <button id="prev-btn" title="Previous Slide">Prev</button>
     <select id="slide-select">
-      {{range .Slides}}<option value="{{.Index}}">{{.Title}}</option>
-      {{end}}
+      {{range .Slides}}{{if ne .Index 0}}<option value="{{.Index}}">{{.Title}}</option>
+      {{end}}{{end}}
     </select>
     <button id="next-btn" title="Next Slide">Next</button>
-    <span class="slide-counter" id="slide-counter">1 / {{.SlideCount}}</span>
+    <span class="slide-counter" id="slide-counter"></span>
+  </div>
+
+  <div class="controls">
     <button id="zoom-in" title="Zoom In">+ Zoom In</button>
     <button id="zoom-out" title="Zoom Out">- Zoom Out</button>
     <button id="zoom-reset" title="Reset Zoom">Reset</button>
@@ -504,6 +558,8 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
       var total = {{.SlideCount}};
       var titles = [{{range .Slides}}"{{.Title}}",{{end}}];
       var sources = [{{range .Slides}}` + "`" + `{{.Mermaid}}` + "`" + `,{{end}}];
+      var activeTab = 'pkgmap'; // 'pkgmap' or 'entities'
+      var entityTotal = total - 1; // slides 1..n
 
       function showSlide(idx) {
         if (idx < 0) idx = 0;
@@ -513,18 +569,41 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
           panels[i].classList.remove('active');
         }
         document.getElementById('slide-' + idx).classList.add('active');
-        document.getElementById('slide-counter').textContent = (idx + 1) + ' / ' + total;
-        document.getElementById('slide-title').textContent = titles[idx];
-        document.getElementById('slide-select').value = idx;
+        document.getElementById('slide-title').textContent = idx === 0 ? '' : titles[idx];
+        if (idx > 0) {
+          document.getElementById('slide-counter').textContent = (idx) + ' / ' + entityTotal;
+          document.getElementById('slide-select').value = idx;
+        }
         current = idx;
       }
+
+      function switchTab(tab) {
+        activeTab = tab;
+        var tabPkgmap = document.getElementById('tab-pkgmap');
+        var tabEntities = document.getElementById('tab-entities');
+        var entityControls = document.getElementById('entity-controls');
+
+        tabPkgmap.classList.toggle('active', tab === 'pkgmap');
+        tabEntities.classList.toggle('active', tab === 'entities');
+        entityControls.style.display = tab === 'entities' ? 'flex' : 'none';
+
+        if (tab === 'pkgmap') {
+          showSlide(0);
+        } else {
+          showSlide(current > 0 ? current : 1);
+        }
+      }
+
+      document.getElementById('tab-pkgmap').addEventListener('click', function() {
+        switchTab('pkgmap');
+      });
+      document.getElementById('tab-entities').addEventListener('click', function() {
+        switchTab('entities');
+      });
 
       // All slides start visible so Mermaid can measure SVG text.
       // After rendering completes, fix SVG widths and add 'ready' class.
       mermaid.run().then(function() {
-        // Set each SVG width based on its viewBox and available space.
-        // If the SVG fits, render at natural pixel width for crisp text.
-        // If it overflows, scale it down to fit the viewport.
         document.querySelectorAll('pre.mermaid svg').forEach(function(svg) {
           var vb = svg.getAttribute('viewBox');
           if (vb) {
@@ -552,18 +631,23 @@ const slidesHTMLTemplate = `<!DOCTYPE html>
       showSlide(0);
 
       document.getElementById('prev-btn').addEventListener('click', function() {
-        showSlide(current - 1);
+        var next = current - 1;
+        if (next < 1) next = 1;
+        showSlide(next);
       });
       document.getElementById('next-btn').addEventListener('click', function() {
-        showSlide(current + 1);
+        var next = current + 1;
+        if (next >= total) next = total - 1;
+        showSlide(next);
       });
       document.getElementById('slide-select').addEventListener('change', function() {
         showSlide(parseInt(this.value, 10));
       });
 
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'ArrowLeft') { showSlide(current - 1); }
-        if (e.key === 'ArrowRight') { showSlide(current + 1); }
+        if (activeTab !== 'entities') return;
+        if (e.key === 'ArrowLeft') { var n = current - 1; if (n < 1) n = 1; showSlide(n); }
+        if (e.key === 'ArrowRight') { var n = current + 1; if (n >= total) n = total - 1; showSlide(n); }
       });
 
       // Zoom
