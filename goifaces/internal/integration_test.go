@@ -503,10 +503,10 @@ func TestPackageMapMultiPackage(t *testing.T) {
 	assert.Equal(t, "Package Map", slides[0].Title)
 	assert.Contains(t, pkgMap, "flowchart LR", "package map should be a flowchart")
 
-	// Should show packages
+	// Should show packages with relative paths
 	assert.Contains(t, pkgMap, "io", "should contain io package")
 	assert.Contains(t, pkgMap, "http", "should contain http package")
-	assert.Contains(t, pkgMap, "router", "should contain router subpackage")
+	assert.Contains(t, pkgMap, "http/router", "leaf node inside subgraph should show full relative path")
 
 	// Should show counts
 	assert.Contains(t, pkgMap, "2 ifaces", "io should show 2 interfaces")
@@ -646,6 +646,50 @@ func TestFormatPkgLabel(t *testing.T) {
 		assert.NotContains(t, pkgMap, `\n`,
 			"package map labels should not contain literal backslash-n")
 	})
+}
+
+func TestPackageMapRelativePaths(t *testing.T) {
+	// Deeply nested packages should show full relative paths in node labels.
+	ifaces := []analyzer.InterfaceDef{
+		{Name: "Handler", PkgPath: "example.com/app/internal/http/middleware/auth", PkgName: "auth"},
+		{Name: "Store", PkgPath: "example.com/app/internal/db", PkgName: "db"},
+	}
+	typs := []analyzer.TypeDef{
+		{Name: "JWTAuth", PkgPath: "example.com/app/internal/http/middleware/auth", PkgName: "auth"},
+		{Name: "PGStore", PkgPath: "example.com/app/internal/db", PkgName: "db"},
+	}
+	rels := []analyzer.Relation{
+		{Type: &typs[0], Interface: &ifaces[0]},
+		{Type: &typs[1], Interface: &ifaces[1]},
+	}
+	result := &analyzer.Result{
+		Interfaces: ifaces,
+		Types:      typs,
+		Relations:  rels,
+	}
+
+	diagOpts := diagram.DiagramOptions{MaxMethodsPerBox: 5}
+	splitter := split.NewHubAndSpoke(split.Options{HubThreshold: 3, ChunkSize: 3})
+	slideOpts := diagram.SlideOptions{Threshold: 0}
+	slides := diagram.BuildSlides(result, diagOpts, splitter, slideOpts)
+
+	require.GreaterOrEqual(t, len(slides), 1)
+	pkgMap := slides[0].Mermaid
+
+	// Deeply nested package should show full relative path
+	assert.Contains(t, pkgMap, "http/middleware/auth",
+		"deeply nested package should show full relative path")
+	assert.Contains(t, pkgMap, "db",
+		"single-segment package should show its name")
+
+	// Subgraph titles must use only the short segment name, not the full relative path
+	for line := range strings.SplitSeq(pkgMap, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "subgraph ") {
+			assert.NotContains(t, trimmed, "/",
+				"subgraph titles should be short segments, not full relative paths: %q", trimmed)
+		}
+	}
 }
 
 func TestOrphanedInterfacesRemovedFromSlides(t *testing.T) {
@@ -820,7 +864,7 @@ func TestPrepareInteractiveData(t *testing.T) {
 
 	require.Len(t, data.Interfaces, 1)
 	assert.Equal(t, "test_MyIface", data.Interfaces[0].ID)
-	assert.Equal(t, "MyIface", data.Interfaces[0].Name)
+	assert.Equal(t, "test.MyIface", data.Interfaces[0].Name)
 	assert.Equal(t, "test", data.Interfaces[0].PkgName)
 	require.Len(t, data.Interfaces[0].Methods, 1)
 	assert.Equal(t, "Do(ctx context.Context) error", data.Interfaces[0].Methods[0])

@@ -6,24 +6,24 @@ import (
 	"github.com/olehluchkiv/goifaces/internal/analyzer"
 )
 
-// InteractiveInterface holds prepared data for an interface in the interactive UI.
+// InteractiveInterface holds pre-computed data for a single interface in the interactive UI.
 type InteractiveInterface struct {
 	ID         string   `json:"id"`
 	Name       string   `json:"name"`
 	PkgName    string   `json:"pkgName"`
 	Methods    []string `json:"methods"`
-	SourceFile string   `json:"sourceFile"`
+	SourceFile string   `json:"sourceFile,omitempty"`
 }
 
-// InteractiveType holds prepared data for an implementation type in the interactive UI.
+// InteractiveType holds pre-computed data for a single implementation type in the interactive UI.
 type InteractiveType struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	PkgName    string `json:"pkgName"`
-	SourceFile string `json:"sourceFile"`
+	SourceFile string `json:"sourceFile,omitempty"`
 }
 
-// InteractiveRelation holds a type→interface implementation relation.
+// InteractiveRelation maps a type to an interface it implements.
 type InteractiveRelation struct {
 	TypeID      string `json:"typeId"`
 	InterfaceID string `json:"interfaceId"`
@@ -39,9 +39,10 @@ type InteractiveData struct {
 }
 
 // PrepareInteractiveData converts an analyzer.Result into the data structure
-// the interactive server needs, computing sanitized node IDs and method signatures.
+// needed by the interactive server template. It computes sanitized node IDs
+// and method signatures.
 func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) InteractiveData {
-	// Sort interfaces deterministically by (pkgName, name).
+	// Sort interfaces deterministically
 	ifaces := make([]analyzer.InterfaceDef, len(result.Interfaces))
 	copy(ifaces, result.Interfaces)
 	sort.Slice(ifaces, func(i, j int) bool {
@@ -51,7 +52,7 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 		return ifaces[i].Name < ifaces[j].Name
 	})
 
-	// Sort types deterministically by (pkgName, name).
+	// Sort types deterministically
 	typs := make([]analyzer.TypeDef, len(result.Types))
 	copy(typs, result.Types)
 	sort.Slice(typs, func(i, j int) bool {
@@ -61,36 +62,39 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 		return typs[i].Name < typs[j].Name
 	})
 
-	var interactiveIfaces []InteractiveInterface
-	for _, iface := range ifaces {
-		var methods []string
+	// Build interactive interfaces
+	interactiveIfaces := make([]InteractiveInterface, len(ifaces))
+	for i, iface := range ifaces {
 		limit := len(iface.Methods)
 		if opts.MaxMethodsPerBox > 0 && limit > opts.MaxMethodsPerBox {
 			limit = opts.MaxMethodsPerBox
 		}
-		for i := 0; i < limit; i++ {
-			methods = append(methods, SanitizeSignature(iface.Methods[i].Signature))
+		methods := make([]string, limit)
+		for j := 0; j < limit; j++ {
+			methods[j] = SanitizeSignature(iface.Methods[j].Signature)
 		}
-		interactiveIfaces = append(interactiveIfaces, InteractiveInterface{
+		interactiveIfaces[i] = InteractiveInterface{
 			ID:         NodeID(iface.PkgName, iface.Name),
-			Name:       iface.Name,
+			Name:       iface.PkgName + "." + iface.Name,
 			PkgName:    iface.PkgName,
 			Methods:    methods,
 			SourceFile: iface.SourceFile,
-		})
+		}
 	}
 
-	var interactiveTypes []InteractiveType
-	for _, typ := range typs {
-		interactiveTypes = append(interactiveTypes, InteractiveType{
+	// Build interactive types
+	interactiveTypes := make([]InteractiveType, len(typs))
+	for i, typ := range typs {
+		interactiveTypes[i] = InteractiveType{
 			ID:         NodeID(typ.PkgName, typ.Name),
-			Name:       typ.Name,
+			Name:       typ.PkgName + "." + typ.Name,
 			PkgName:    typ.PkgName,
 			SourceFile: typ.SourceFile,
-		})
+		}
 	}
 
-	// Sort relations deterministically.
+	// Build interactive relations
+	// Sort relations deterministically
 	rels := make([]analyzer.Relation, len(result.Relations))
 	copy(rels, result.Relations)
 	sort.Slice(rels, func(i, j int) bool {
@@ -104,12 +108,12 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 		return ifaceKeyI < ifaceKeyJ
 	})
 
-	var interactiveRels []InteractiveRelation
-	for _, rel := range rels {
-		interactiveRels = append(interactiveRels, InteractiveRelation{
+	interactiveRels := make([]InteractiveRelation, len(rels))
+	for i, rel := range rels {
+		interactiveRels[i] = InteractiveRelation{
 			TypeID:      NodeID(rel.Type.PkgName, rel.Type.Name),
 			InterfaceID: NodeID(rel.Interface.PkgName, rel.Interface.Name),
-		})
+		}
 	}
 
 	return InteractiveData{
@@ -119,49 +123,67 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 	}
 }
 
-// FilterBySelection filters a Result to only include selected items and their
-// direct relations. This is the Go-side equivalent of the client-side JS filtering,
-// used for testing.
+// FilterBySelection filters an analyzer.Result to include only the selected
+// types and interfaces, plus any items directly related to them via
+// implementation relations. This mirrors the client-side JS filtering logic
+// and is used for testing.
 func FilterBySelection(result *analyzer.Result, selectedTypeIDs, selectedIfaceIDs []string) *analyzer.Result {
-	typeIDSet := make(map[string]bool, len(selectedTypeIDs))
+	// Build lookup sets for selected IDs
+	selTypes := make(map[string]bool, len(selectedTypeIDs))
 	for _, id := range selectedTypeIDs {
-		typeIDSet[id] = true
+		selTypes[id] = true
 	}
-	ifaceIDSet := make(map[string]bool, len(selectedIfaceIDs))
+	selIfaces := make(map[string]bool, len(selectedIfaceIDs))
 	for _, id := range selectedIfaceIDs {
-		ifaceIDSet[id] = true
+		selIfaces[id] = true
 	}
 
-	// Find all relations involving selected items.
-	// A relation is included if its type OR its interface is selected.
-	relatedTypeIDs := make(map[string]bool)
-	relatedIfaceIDs := make(map[string]bool)
+	// Find all relations involving selected items, and collect related IDs
+	relatedTypes := make(map[string]bool)
+	relatedIfaces := make(map[string]bool)
 	var filteredRels []analyzer.Relation
 
 	for _, rel := range result.Relations {
-		tID := NodeID(rel.Type.PkgName, rel.Type.Name)
-		iID := NodeID(rel.Interface.PkgName, rel.Interface.Name)
+		typeID := NodeID(rel.Type.PkgName, rel.Type.Name)
+		ifaceID := NodeID(rel.Interface.PkgName, rel.Interface.Name)
 
-		if typeIDSet[tID] || ifaceIDSet[iID] {
+		// Include relation if either side is selected
+		if selTypes[typeID] || selIfaces[ifaceID] {
 			filteredRels = append(filteredRels, rel)
-			relatedTypeIDs[tID] = true
-			relatedIfaceIDs[iID] = true
+			relatedTypes[typeID] = true
+			relatedIfaces[ifaceID] = true
 		}
 	}
 
-	// Include selected items + items brought in through relations.
+	// Collect all IDs that should be in the result:
+	// selected items + items related to them via surviving relations
+	includeTypes := make(map[string]bool)
+	includeIfaces := make(map[string]bool)
+	for id := range selTypes {
+		includeTypes[id] = true
+	}
+	for id := range selIfaces {
+		includeIfaces[id] = true
+	}
+	for id := range relatedTypes {
+		includeTypes[id] = true
+	}
+	for id := range relatedIfaces {
+		includeIfaces[id] = true
+	}
+
+	// Filter interfaces
 	var filteredIfaces []analyzer.InterfaceDef
 	for _, iface := range result.Interfaces {
-		id := NodeID(iface.PkgName, iface.Name)
-		if ifaceIDSet[id] || relatedIfaceIDs[id] {
+		if includeIfaces[NodeID(iface.PkgName, iface.Name)] {
 			filteredIfaces = append(filteredIfaces, iface)
 		}
 	}
 
+	// Filter types
 	var filteredTypes []analyzer.TypeDef
 	for _, typ := range result.Types {
-		id := NodeID(typ.PkgName, typ.Name)
-		if typeIDSet[id] || relatedTypeIDs[id] {
+		if includeTypes[NodeID(typ.PkgName, typ.Name)] {
 			filteredTypes = append(filteredTypes, typ)
 		}
 	}
