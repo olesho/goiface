@@ -622,8 +622,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             group.appendChild(label);
 
             var headerH = 20;
-            var gw = p.w - 2 * TREEMAP_GAP;
-            var gh = p.h - 2 * TREEMAP_GAP;
+            var gw = Math.max(0, p.w - 2 * TREEMAP_GAP);
+            var gh = Math.max(0, p.h - 2 * TREEMAP_GAP);
             var innerPad = 3;
             var innerRect = {x: innerPad, y: headerH, w: Math.max(0, gw - 2 * innerPad), h: Math.max(0, gh - headerH - innerPad)};
 
