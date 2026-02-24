@@ -376,6 +376,56 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       display: none;
     }
 
+    .treemap-node[data-clickable] {
+      cursor: pointer;
+    }
+
+    .treemap-node.tm-selected {
+      border: 2px solid #1976d2;
+      box-shadow: 0 0 0 2px rgba(25,118,210,0.3);
+    }
+
+    .treemap-overlay {
+      position: absolute;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      max-height: 300px;
+      overflow-y: auto;
+      min-width: 200px;
+      max-width: 400px;
+      z-index: 50;
+      padding: 8px 0;
+    }
+
+    .treemap-overlay-header {
+      padding: 4px 12px 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 4px;
+    }
+
+    .treemap-overlay-section {
+      padding: 4px 12px 2px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .treemap-overlay-item {
+      padding: 3px 12px;
+      font-size: 0.8rem;
+      cursor: default;
+    }
+
+    .treemap-overlay-item:hover {
+      background-color: #f0f0f0;
+    }
+
     @media (prefers-color-scheme: dark) {
       .treemap-node {
         border-color: rgba(255,255,255,0.15);
@@ -384,12 +434,34 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       .treemap-node:hover {
         border-color: rgba(255,255,255,0.5);
       }
+      .treemap-node.tm-selected {
+        border-color: #7c8dff;
+        box-shadow: 0 0 0 2px rgba(124,141,255,0.3);
+      }
       .treemap-group {
         border-color: rgba(255,255,255,0.2);
       }
       .treemap-group-label {
         background: rgba(255,255,255,0.08);
         color: #e0e0e0;
+      }
+      .treemap-overlay {
+        background: #2d2d44;
+        border-color: #444;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      }
+      .treemap-overlay-header {
+        color: #e0e0e0;
+        border-bottom-color: #444;
+      }
+      .treemap-overlay-section {
+        color: #999;
+      }
+      .treemap-overlay-item {
+        color: #e0e0e0;
+      }
+      .treemap-overlay-item:hover {
+        background-color: #3d3d5c;
       }
     }
   </style>
@@ -398,8 +470,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
   <h1>goifaces — {{.RepoAddress}}</h1>
 
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="pkgmap">Package Map</button>
-    <button class="tab-btn" data-tab="pkgmap-html">Package Map (html)</button>
+    <button class="tab-btn active" data-tab="pkgmap-html">Package Map</button>
     <button class="tab-btn" data-tab="impls">Implementations</button>
     <button class="tab-btn" data-tab="ifaces">Interfaces</button>
   </div>
@@ -408,20 +479,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     <button id="zoom-in" title="Zoom In">+ Zoom In</button>
     <button id="zoom-out" title="Zoom Out">- Zoom Out</button>
     <button id="zoom-reset" title="Reset Zoom">Reset</button>
-    <button id="copy-src" title="Copy Mermaid Source">Copy Source</button>
+    <button id="copy-src" title="Copy Source">Copy Source</button>
   </div>
 
   <!-- Package Map tab -->
-  <div class="tab-panel active full-width" id="panel-pkgmap">
-    <div class="diagram-viewport">
-      <div class="diagram-container" id="pkgmap-container">
-        <pre class="mermaid" id="pkgmap-mermaid">{{.PackageMapMermaid}}</pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Package Map HTML tab -->
-  <div class="tab-panel full-width" id="panel-pkgmap-html">
+  <div class="tab-panel active full-width" id="panel-pkgmap-html">
     <div class="treemap-viewport" id="pkgmap-html-viewport">
       <div class="treemap-container" id="pkgmap-html-container"></div>
     </div>
@@ -478,9 +540,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     (function() {
       var data = {{.DataJSON}};
       var pkgMapData = {{.PackageMapJSON}};
-      var currentTab = 'pkgmap';
+      var currentTab = 'pkgmap-html';
       var currentMermaidSource = '';
-      var pkgMapRendered = false;
       var pkgMapHtmlRendered = false;
 
       // Pastel palette matching Go-side colors
@@ -636,6 +697,106 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         });
       }
 
+      // Build package→interfaces/types lookup maps for overlay
+      var pkgInterfaces = {};
+      var pkgTypes = {};
+      data.interfaces.forEach(function(iface) {
+        if (!iface.pkgPath) return;
+        if (!pkgInterfaces[iface.pkgPath]) pkgInterfaces[iface.pkgPath] = [];
+        pkgInterfaces[iface.pkgPath].push(iface);
+      });
+      data.types.forEach(function(t) {
+        if (!t.pkgPath) return;
+        if (!pkgTypes[t.pkgPath]) pkgTypes[t.pkgPath] = [];
+        pkgTypes[t.pkgPath].push(t);
+      });
+
+      // Overlay state
+      var activeOverlay = null;
+      var selectedNode = null;
+
+      function showPackageOverlay(nodeEl, d) {
+        dismissOverlay();
+        var ifaces = pkgInterfaces[d.pkgPath] || [];
+        var types = pkgTypes[d.pkgPath] || [];
+        if (ifaces.length === 0 && types.length === 0) return;
+
+        var overlay = document.createElement('div');
+        overlay.className = 'treemap-overlay';
+
+        var header = document.createElement('div');
+        header.className = 'treemap-overlay-header';
+        header.textContent = d.relPath ? d.relPath : d.name;
+        overlay.appendChild(header);
+
+        if (ifaces.length > 0) {
+          var sec = document.createElement('div');
+          sec.className = 'treemap-overlay-section';
+          sec.textContent = 'Interfaces';
+          overlay.appendChild(sec);
+          ifaces.forEach(function(iface) {
+            var item = document.createElement('div');
+            item.className = 'treemap-overlay-item';
+            item.textContent = iface.name.indexOf('.') >= 0 ? iface.name.split('.').pop() : iface.name;
+            overlay.appendChild(item);
+          });
+        }
+
+        if (types.length > 0) {
+          var sec2 = document.createElement('div');
+          sec2.className = 'treemap-overlay-section';
+          sec2.textContent = 'Types';
+          overlay.appendChild(sec2);
+          types.forEach(function(t) {
+            var item = document.createElement('div');
+            item.className = 'treemap-overlay-item';
+            item.textContent = t.name.indexOf('.') >= 0 ? t.name.split('.').pop() : t.name;
+            overlay.appendChild(item);
+          });
+        }
+
+        // Position overlay near the clicked block
+        var viewport = document.getElementById('pkgmap-html-viewport');
+        var vpRect = viewport.getBoundingClientRect();
+        var nodeRect = nodeEl.getBoundingClientRect();
+
+        // Calculate position relative to viewport
+        var left = nodeRect.right - vpRect.left + viewport.scrollLeft + 4;
+        var top = nodeRect.top - vpRect.top + viewport.scrollTop;
+
+        // Check if overlay would go off the right edge
+        if (left + 200 > viewport.scrollWidth) {
+          left = nodeRect.left - vpRect.left + viewport.scrollLeft - 204;
+          if (left < 0) left = 0;
+        }
+
+        overlay.style.left = left + 'px';
+        overlay.style.top = top + 'px';
+
+        viewport.appendChild(overlay);
+        nodeEl.classList.add('tm-selected');
+        activeOverlay = overlay;
+        selectedNode = nodeEl;
+      }
+
+      function dismissOverlay() {
+        if (activeOverlay) {
+          activeOverlay.remove();
+          activeOverlay = null;
+        }
+        if (selectedNode) {
+          selectedNode.classList.remove('tm-selected');
+          selectedNode = null;
+        }
+      }
+
+      // Click outside overlay to dismiss
+      document.getElementById('pkgmap-html-viewport').addEventListener('click', function(e) {
+        if (activeOverlay && !activeOverlay.contains(e.target) && (!e.target.hasAttribute || !e.target.hasAttribute('data-clickable'))) {
+          dismissOverlay();
+        }
+      });
+
       var tooltip = document.getElementById('treemap-tooltip');
       var TREEMAP_GAP = 12;
       var MAX_BLOCK_HEIGHT = 120;
@@ -719,6 +880,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               ss.textContent = statsText(d);
               selfNode.appendChild(ss);
               attachTooltip(selfNode, d);
+              attachClickHandler(selfNode, d);
               group.appendChild(selfNode);
 
               innerRect = {x: innerRect.x, y: innerRect.y + renderedSelfH, w: innerRect.w, h: Math.max(0, innerRect.h - renderedSelfH)};
@@ -746,6 +908,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             statsEl.textContent = statsText(d);
             node.appendChild(statsEl);
             attachTooltip(node, d);
+            attachClickHandler(node, d);
             container.appendChild(node);
           }
         }
@@ -774,6 +937,22 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         });
       }
 
+      function attachClickHandler(el, d) {
+        if (!d.pkgPath) return;
+        var ifaces = pkgInterfaces[d.pkgPath] || [];
+        var types = pkgTypes[d.pkgPath] || [];
+        if (ifaces.length === 0 && types.length === 0) return;
+        el.setAttribute('data-clickable', 'true');
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          if (selectedNode === el) {
+            dismissOverlay();
+          } else {
+            showPackageOverlay(el, d);
+          }
+        });
+      }
+
       function positionTooltip(e) {
         tooltip.style.left = (e.clientX + 12) + 'px';
         tooltip.style.top = (e.clientY + 12) + 'px';
@@ -781,6 +960,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       var resizeTimer = null;
       function layoutTreemap() {
+        dismissOverlay();
         var viewport = document.getElementById('pkgmap-html-viewport');
         var container = document.getElementById('pkgmap-html-container');
         container.innerHTML = '';
@@ -872,9 +1052,6 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
         document.getElementById('panel-' + tab).classList.add('active');
 
-        if (tab === 'pkgmap' && !pkgMapRendered) {
-          renderPackageMap();
-        }
         if (tab === 'pkgmap-html' && !pkgMapHtmlRendered) {
           requestAnimationFrame(function() {
             layoutTreemap();
@@ -883,30 +1060,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
       }
 
-      function renderPackageMap() {
-        var pre = document.getElementById('pkgmap-mermaid');
-        mermaid.run({ nodes: [pre] }).then(function() {
-          fixSvgWidth(pre);
-          pkgMapRendered = true;
-          currentMermaidSource = pre.getAttribute('data-original') || '';
-        });
-        // Save original source before mermaid replaces it
-        pre.setAttribute('data-original', pre.textContent);
-      }
-
-      // Initial render of package map (deferred to let the page paint first)
-      var pkgPre = document.getElementById('pkgmap-mermaid');
-      pkgPre.setAttribute('data-original', pkgPre.textContent);
-      pkgPre.textContent = 'Loading diagram...';
+      // Initial render of treemap on page load
       requestAnimationFrame(function() {
-        setTimeout(function() {
-          pkgPre.textContent = pkgPre.getAttribute('data-original');
-          mermaid.run({ nodes: [pkgPre] }).then(function() {
-            fixSvgWidth(pkgPre);
-            pkgMapRendered = true;
-            currentMermaidSource = pkgPre.getAttribute('data-original');
-          });
-        }, 0);
+        layoutTreemap();
+        pkgMapHtmlRendered = true;
       });
 
       function fixSvgWidth(pre) {
@@ -1097,7 +1254,6 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       var maxScale = 10;
 
       function getActiveContainer() {
-        if (currentTab === 'pkgmap') return document.getElementById('pkgmap-container');
         if (currentTab === 'pkgmap-html') return document.getElementById('pkgmap-html-container');
         if (currentTab === 'ifaces') return document.getElementById('ifaces-diagram-container');
         return document.getElementById('impls-diagram-container');
@@ -1122,9 +1278,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       document.getElementById('copy-src').addEventListener('click', function() {
         var src = '';
-        if (currentTab === 'pkgmap') {
-          src = document.getElementById('pkgmap-mermaid').getAttribute('data-original') || '';
-        } else if (currentTab === 'pkgmap-html') {
+        if (currentTab === 'pkgmap-html') {
           src = buildTreemapText(pkgMapData, '');
         } else {
           src = currentMermaidSource;
@@ -1168,10 +1322,9 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
 // interactiveData holds all data passed to the interactive HTML template.
 type interactiveData struct {
-	PackageMapMermaid string
-	DataJSON          template.JS
-	PackageMapJSON    template.JS
-	RepoAddress       string
+	DataJSON       template.JS
+	PackageMapJSON template.JS
+	RepoAddress    string
 }
 
 // ServeInteractive starts the HTTP server with interactive tabbed UI.
@@ -1202,10 +1355,9 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 	}
 
 	templateData := interactiveData{
-		PackageMapMermaid: data.PackageMapMermaid,
-		DataJSON:          template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
-		PackageMapJSON:    template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
-		RepoAddress:       data.RepoAddress,
+		DataJSON:       template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
+		PackageMapJSON: template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
+		RepoAddress:    data.RepoAddress,
 	}
 
 	mux := http.NewServeMux()
@@ -1217,12 +1369,6 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 			logger.Error("failed to render interactive template", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
-	})
-
-	mux.HandleFunc("/mermaid.md", func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("request received", "method", r.Method, "path", r.URL.Path)
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte(data.PackageMapMermaid))
 	})
 
 	addr := fmt.Sprintf(":%d", port)

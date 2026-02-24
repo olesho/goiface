@@ -11,6 +11,7 @@ type InteractiveInterface struct {
 	ID         string   `json:"id"`
 	Name       string   `json:"name"`
 	PkgName    string   `json:"pkgName"`
+	PkgPath    string   `json:"pkgPath"`
 	Methods    []string `json:"methods"`
 	SourceFile string   `json:"sourceFile,omitempty"`
 }
@@ -20,6 +21,7 @@ type InteractiveType struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	PkgName    string `json:"pkgName"`
+	PkgPath    string `json:"pkgPath"`
 	SourceFile string `json:"sourceFile,omitempty"`
 }
 
@@ -42,12 +44,11 @@ type PackageMapNode struct {
 
 // InteractiveData holds all data needed for the interactive tabbed UI.
 type InteractiveData struct {
-	PackageMapMermaid string                 `json:"packageMapMermaid"`
-	PackageMapNodes   []*PackageMapNode      `json:"packageMapNodes,omitempty"`
-	Interfaces        []InteractiveInterface `json:"interfaces"`
-	Types             []InteractiveType      `json:"types"`
-	Relations         []InteractiveRelation  `json:"relations"`
-	RepoAddress       string                 `json:"repoAddress"`
+	PackageMapNodes []*PackageMapNode      `json:"packageMapNodes,omitempty"`
+	Interfaces      []InteractiveInterface `json:"interfaces"`
+	Types           []InteractiveType      `json:"types"`
+	Relations       []InteractiveRelation  `json:"relations"`
+	RepoAddress     string                 `json:"repoAddress"`
 }
 
 // PrepareInteractiveData converts an analyzer.Result into the data structure
@@ -89,6 +90,7 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 			ID:         NodeID(iface.PkgName, iface.Name),
 			Name:       iface.PkgName + "." + iface.Name,
 			PkgName:    iface.PkgName,
+			PkgPath:    iface.PkgPath,
 			Methods:    methods,
 			SourceFile: iface.SourceFile,
 		}
@@ -101,6 +103,7 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 			ID:         NodeID(typ.PkgName, typ.Name),
 			Name:       typ.PkgName + "." + typ.Name,
 			PkgName:    typ.PkgName,
+			PkgPath:    typ.PkgPath,
 			SourceFile: typ.SourceFile,
 		}
 	}
