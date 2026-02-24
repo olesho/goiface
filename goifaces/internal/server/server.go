@@ -577,6 +577,39 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         return worst;
       }
 
+      function verticalStack(nodes, rect) {
+        var total = 0;
+        for (var i = 0; i < nodes.length; i++) total += nodes[i].value;
+        if (total <= 0) return [];
+
+        var minChildH = 2 * TREEMAP_GAP + 36;
+        var heights = [];
+        var totalH = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          var h = Math.max(minChildH, rect.h * (nodes[i].value / total));
+          heights.push(h);
+          totalH += h;
+        }
+
+        // Scale down proportionally if total exceeds available height
+        var scale = totalH > rect.h && totalH > 0 ? rect.h / totalH : 1;
+
+        var results = [];
+        var y = rect.y;
+        for (var i = 0; i < nodes.length; i++) {
+          var h = heights[i] * scale;
+          results.push({
+            data: nodes[i],
+            x: rect.x,
+            y: y,
+            w: rect.w,
+            h: h
+          });
+          y += h;
+        }
+        return results;
+      }
+
       // Flatten deep nesting: cap at maxDepth levels.
       // Applies sqrt scaling to compress the value range so large packages
       // don't dominate the layout and small packages remain readable.
@@ -606,6 +639,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       var tooltip = document.getElementById('treemap-tooltip');
       var TREEMAP_GAP = 12;
       var MAX_BLOCK_HEIGHT = 120;
+      var MIN_NODE_WIDTH = 80;
 
       function renderTreemap(container, nodes, rect, depth, colorIdx) {
         if (!nodes || nodes.length === 0) {
@@ -616,6 +650,19 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
 
         var positioned = squarify(nodes, rect);
+
+        // If any child would be narrower than MIN_NODE_WIDTH, fall back to vertical stacking
+        var needsVerticalStack = false;
+        for (var i = 0; i < positioned.length; i++) {
+          if (positioned[i].w - 2 * TREEMAP_GAP < MIN_NODE_WIDTH) {
+            needsVerticalStack = true;
+            break;
+          }
+        }
+        if (needsVerticalStack) {
+          positioned = verticalStack(nodes, rect);
+        }
+
         for (var i = 0; i < positioned.length; i++) {
           var p = positioned[i];
           var d = p.data;

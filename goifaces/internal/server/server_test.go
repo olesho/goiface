@@ -80,3 +80,14 @@ func TestTreemapMinDimensions(t *testing.T) {
 	assert.Contains(t, interactiveHTMLTemplate, "overflow: visible",
 		"treemap nodes or groups should allow visible overflow on hover")
 }
+
+func TestTreemapVerticalStackFallback(t *testing.T) {
+	// The renderTreemap function must detect when squarify produces
+	// children narrower than MIN_NODE_WIDTH and fall back to vertical stacking.
+	assert.Contains(t, interactiveHTMLTemplate, "MIN_NODE_WIDTH",
+		"template should define MIN_NODE_WIDTH constant")
+	assert.Contains(t, interactiveHTMLTemplate, "verticalStack",
+		"template should contain verticalStack fallback function")
+	assert.Contains(t, interactiveHTMLTemplate, "needsVerticalStack",
+		"template should check for overflow and trigger vertical stacking")
+}
