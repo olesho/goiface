@@ -310,11 +310,14 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       text-align: center;
       cursor: default;
       transition: border-color 0.15s;
+      min-height: 36px;
+      min-width: 56px;
     }
 
     .treemap-node:hover {
       border-color: rgba(0,0,0,0.5);
       z-index: 10;
+      overflow: visible;
     }
 
     .treemap-node .tm-name {
@@ -325,6 +328,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       text-overflow: ellipsis;
       white-space: nowrap;
       max-width: 95%;
+      flex-shrink: 0;
     }
 
     .treemap-node .tm-stats {
@@ -334,13 +338,16 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       text-overflow: ellipsis;
       white-space: nowrap;
       max-width: 95%;
+      flex-shrink: 0;
     }
 
     .treemap-group {
       position: absolute;
-      overflow: hidden;
+      overflow: visible;
       border: 2px solid rgba(0,0,0,0.2);
       border-radius: 4px;
+      min-height: 24px;
+      min-width: 50px;
     }
 
     .treemap-group-label {
@@ -570,18 +577,27 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         return worst;
       }
 
-      // Flatten deep nesting: cap at maxDepth levels
+      // Flatten deep nesting: cap at maxDepth levels.
+      // Applies sqrt scaling to compress the value range so large packages
+      // don't dominate the layout and small packages remain readable.
       function flattenTree(nodes, maxDepth) {
         if (!nodes) return [];
         return nodes.map(function(n) {
           var clone = {name: n.name, relPath: n.relPath, pkgPath: n.pkgPath, interfaces: n.interfaces, types: n.types, value: n.value};
           if (n.children && n.children.length > 0) {
             if (maxDepth <= 1) {
-              // Flatten children into this node
               clone.children = null;
+              clone.value = Math.max(1, Math.ceil(Math.sqrt(n.value)));
             } else {
               clone.children = flattenTree(n.children, maxDepth - 1);
+              var sum = 0;
+              for (var i = 0; i < clone.children.length; i++) sum += clone.children[i].value;
+              var own = (n.interfaces || 0) + (n.types || 0);
+              if (own > 0) sum += Math.max(1, Math.ceil(Math.sqrt(own)));
+              clone.value = sum;
             }
+          } else {
+            clone.value = Math.max(1, Math.ceil(Math.sqrt(n.value)));
           }
           return clone;
         });
