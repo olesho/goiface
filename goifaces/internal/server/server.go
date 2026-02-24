@@ -588,7 +588,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       }
 
       var tooltip = document.getElementById('treemap-tooltip');
-      var TREEMAP_GAP = 2;
+      var TREEMAP_GAP = 4;
 
       function renderTreemap(container, nodes, rect, depth, colorIdx) {
         if (!nodes || nodes.length === 0) {
