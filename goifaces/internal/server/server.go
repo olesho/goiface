@@ -645,18 +645,14 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               selfNode.style.background = treemapPalette[(ci + 1) % treemapPalette.length].fill;
               selfNode.style.color = color.text;
 
-              if (selfH >= 16) {
-                var sn = document.createElement('div');
-                sn.className = 'tm-name';
-                sn.textContent = d.relPath || d.name;
-                selfNode.appendChild(sn);
-              }
-              if (selfH >= 31) {
-                var ss = document.createElement('div');
-                ss.className = 'tm-stats';
-                ss.textContent = statsText(d);
-                selfNode.appendChild(ss);
-              }
+              var sn = document.createElement('div');
+              sn.className = 'tm-name';
+              sn.textContent = d.relPath || d.name;
+              selfNode.appendChild(sn);
+              var ss = document.createElement('div');
+              ss.className = 'tm-stats';
+              ss.textContent = statsText(d);
+              selfNode.appendChild(ss);
               attachTooltip(selfNode, d);
               group.appendChild(selfNode);
 
@@ -676,18 +672,14 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             node.style.background = color.fill;
             node.style.color = color.text;
 
-            if ((p.h - 2 * TREEMAP_GAP) >= 20) {
-              var nameEl = document.createElement('div');
-              nameEl.className = 'tm-name';
-              nameEl.textContent = d.relPath || d.name;
-              node.appendChild(nameEl);
-            }
-            if ((p.h - 2 * TREEMAP_GAP) >= 35) {
-              var statsEl = document.createElement('div');
-              statsEl.className = 'tm-stats';
-              statsEl.textContent = statsText(d);
-              node.appendChild(statsEl);
-            }
+            var nameEl = document.createElement('div');
+            nameEl.className = 'tm-name';
+            nameEl.textContent = d.relPath || d.name;
+            node.appendChild(nameEl);
+            var statsEl = document.createElement('div');
+            statsEl.className = 'tm-stats';
+            statsEl.textContent = statsText(d);
+            node.appendChild(statsEl);
             attachTooltip(node, d);
             container.appendChild(node);
           }
