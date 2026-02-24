@@ -663,7 +663,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
               var sn = document.createElement('div');
               sn.className = 'tm-name';
-              sn.textContent = d.relPath || d.name;
+              sn.textContent = depth > 0 ? d.name : (d.relPath || d.name);
               selfNode.appendChild(sn);
               var ss = document.createElement('div');
               ss.className = 'tm-stats';
@@ -690,7 +690,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
             var nameEl = document.createElement('div');
             nameEl.className = 'tm-name';
-            nameEl.textContent = d.relPath || d.name;
+            nameEl.textContent = depth > 0 ? d.name : (d.relPath || d.name);
             node.appendChild(nameEl);
             var statsEl = document.createElement('div');
             statsEl.className = 'tm-stats';
