@@ -27,6 +27,39 @@ func TestTreemapAlwaysRendersText(t *testing.T) {
 		"self-node tm-stats should not be gated by height threshold")
 }
 
+func TestTreemapDepthConditionalTextContent(t *testing.T) {
+	// The renderTreemap function must use depth-conditional logic when
+	// setting textContent for both self-nodes and leaf-nodes:
+	//   depth > 0  -> use d.name       (short basename inside nested groups)
+	//   depth == 0 -> use d.relPath     (full relative path at top level)
+
+	// Both the self-node (sn) and leaf-node (nameEl) assignments must
+	// contain the ternary expression.
+	depthTernary := "depth > 0 ? d.name : (d.relPath || d.name)"
+
+	occurrences := strings.Count(interactiveHTMLTemplate, depthTernary)
+	assert.Equal(t, 2, occurrences,
+		"depth-conditional text logic should appear exactly twice "+
+			"(once for self-node, once for leaf-node)")
+
+	// Self-node: sn.textContent uses depth check
+	assert.Contains(t, interactiveHTMLTemplate,
+		"sn.textContent = "+depthTernary,
+		"self-node tm-name should use depth-conditional relPath/name")
+
+	// Leaf-node: nameEl.textContent uses depth check
+	assert.Contains(t, interactiveHTMLTemplate,
+		"nameEl.textContent = "+depthTernary,
+		"leaf-node tm-name should use depth-conditional relPath/name")
+
+	// The old unconditional pattern must NOT be present. Before this change
+	// both assignments were simply: textContent = d.relPath || d.name
+	assert.False(t, strings.Contains(interactiveHTMLTemplate,
+		"textContent = d.relPath || d.name;"),
+		"unconditional relPath assignment should no longer exist — "+
+			"depth check is required")
+}
+
 func TestTreemapMinDimensions(t *testing.T) {
 	// treemap-node must have min-height and min-width so blocks are always
 	// large enough to display at least the name and stats text lines.
