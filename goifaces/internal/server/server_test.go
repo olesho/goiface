@@ -65,7 +65,7 @@ func TestTreemapMinDimensions(t *testing.T) {
 	// large enough to display at least the name and stats text lines.
 	assert.Contains(t, interactiveHTMLTemplate, "min-height: 36px",
 		"treemap-node should have min-height to fit both text lines")
-	assert.Contains(t, interactiveHTMLTemplate, "min-width: 56px",
+	assert.Contains(t, interactiveHTMLTemplate, "min-width: 80px",
 		"treemap-node should have min-width for readable text")
 
 	// treemap-group must have min dimensions for its label

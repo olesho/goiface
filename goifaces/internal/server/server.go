@@ -311,7 +311,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       cursor: default;
       transition: border-color 0.15s;
       min-height: 36px;
-      min-width: 56px;
+      min-width: 80px;
     }
 
     .treemap-node:hover {
