@@ -734,45 +734,51 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
       }
 
-      // Build checkbox lists
+      // Build checkbox lists (deferred to avoid blocking initial paint)
       var implsList = document.getElementById('impls-list');
       var ifacesList = document.getElementById('ifaces-list');
 
-      data.types.forEach(function(t) {
-        var label = document.createElement('label');
-        var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = t.id;
-        cb.className = 'impl-cb';
-        cb.addEventListener('change', onSelectionChange);
-        var span = document.createElement('span');
-        span.appendChild(document.createTextNode(t.name + ' '));
-        var pkg = document.createElement('span');
-        pkg.className = 'pkg-name';
-        pkg.textContent = t.pkgName;
-        span.appendChild(pkg);
-        label.appendChild(cb);
-        label.appendChild(span);
-        implsList.appendChild(label);
-      });
+      setTimeout(function() {
+        var implsFrag = document.createDocumentFragment();
+        data.types.forEach(function(t) {
+          var label = document.createElement('label');
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = t.id;
+          cb.className = 'impl-cb';
+          cb.addEventListener('change', onSelectionChange);
+          var span = document.createElement('span');
+          span.appendChild(document.createTextNode(t.name + ' '));
+          var pkg = document.createElement('span');
+          pkg.className = 'pkg-name';
+          pkg.textContent = t.pkgName;
+          span.appendChild(pkg);
+          label.appendChild(cb);
+          label.appendChild(span);
+          implsFrag.appendChild(label);
+        });
+        implsList.appendChild(implsFrag);
 
-      data.interfaces.forEach(function(iface) {
-        var label = document.createElement('label');
-        var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = iface.id;
-        cb.className = 'iface-cb';
-        cb.addEventListener('change', onSelectionChange);
-        var span = document.createElement('span');
-        span.appendChild(document.createTextNode(iface.name + ' '));
-        var pkg = document.createElement('span');
-        pkg.className = 'pkg-name';
-        pkg.textContent = iface.pkgName;
-        span.appendChild(pkg);
-        label.appendChild(cb);
-        label.appendChild(span);
-        ifacesList.appendChild(label);
-      });
+        var ifacesFrag = document.createDocumentFragment();
+        data.interfaces.forEach(function(iface) {
+          var label = document.createElement('label');
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = iface.id;
+          cb.className = 'iface-cb';
+          cb.addEventListener('change', onSelectionChange);
+          var span = document.createElement('span');
+          span.appendChild(document.createTextNode(iface.name + ' '));
+          var pkg = document.createElement('span');
+          pkg.className = 'pkg-name';
+          pkg.textContent = iface.pkgName;
+          span.appendChild(pkg);
+          label.appendChild(cb);
+          label.appendChild(span);
+          ifacesFrag.appendChild(label);
+        });
+        ifacesList.appendChild(ifacesFrag);
+      }, 0);
 
       // Bulk selection: Implementations
       document.getElementById('impls-all').addEventListener('click', function() {
@@ -831,13 +837,19 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         pre.setAttribute('data-original', pre.textContent);
       }
 
-      // Initial render of package map
+      // Initial render of package map (deferred to let the page paint first)
       var pkgPre = document.getElementById('pkgmap-mermaid');
       pkgPre.setAttribute('data-original', pkgPre.textContent);
-      mermaid.run({ nodes: [pkgPre] }).then(function() {
-        fixSvgWidth(pkgPre);
-        pkgMapRendered = true;
-        currentMermaidSource = pkgPre.getAttribute('data-original');
+      pkgPre.textContent = 'Loading diagram...';
+      requestAnimationFrame(function() {
+        setTimeout(function() {
+          pkgPre.textContent = pkgPre.getAttribute('data-original');
+          mermaid.run({ nodes: [pkgPre] }).then(function() {
+            fixSvgWidth(pkgPre);
+            pkgMapRendered = true;
+            currentMermaidSource = pkgPre.getAttribute('data-original');
+          });
+        }, 0);
       });
 
       function fixSvgWidth(pre) {
