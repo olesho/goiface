@@ -604,7 +604,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       }
 
       var tooltip = document.getElementById('treemap-tooltip');
-      var TREEMAP_GAP = 4;
+      var TREEMAP_GAP = 12;
       var MAX_BLOCK_HEIGHT = 120;
 
       function renderTreemap(container, nodes, rect, depth, colorIdx) {
@@ -641,7 +641,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             var headerH = 20;
             var gw = Math.max(0, p.w - 2 * TREEMAP_GAP);
             var gh = Math.max(0, p.h - 2 * TREEMAP_GAP);
-            var innerPad = 3;
+            var innerPad = 9;
             var innerRect = {x: innerPad, y: headerH, w: Math.max(0, gw - 2 * innerPad), h: Math.max(0, gh - headerH - innerPad)};
 
             // If this node is also a package, add a self node
