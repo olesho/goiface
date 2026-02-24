@@ -866,11 +866,13 @@ func TestPrepareInteractiveData(t *testing.T) {
 	assert.Equal(t, "test_MyIface", data.Interfaces[0].ID)
 	assert.Equal(t, "test.MyIface", data.Interfaces[0].Name)
 	assert.Equal(t, "test", data.Interfaces[0].PkgName)
+	assert.Equal(t, "test", data.Interfaces[0].PkgPath)
 	require.Len(t, data.Interfaces[0].Methods, 1)
 	assert.Equal(t, "Do(ctx context.Context) error", data.Interfaces[0].Methods[0])
 
 	require.Len(t, data.Types, 1)
 	assert.Equal(t, "test_MyType", data.Types[0].ID)
+	assert.Equal(t, "test", data.Types[0].PkgPath)
 
 	require.Len(t, data.Relations, 1)
 	assert.Equal(t, "test_MyType", data.Relations[0].TypeID)

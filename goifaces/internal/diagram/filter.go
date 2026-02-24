@@ -11,6 +11,7 @@ type InteractiveInterface struct {
 	ID         string   `json:"id"`
 	Name       string   `json:"name"`
 	PkgName    string   `json:"pkgName"`
+	PkgPath    string   `json:"pkgPath"`
 	Methods    []string `json:"methods"`
 	SourceFile string   `json:"sourceFile,omitempty"`
 }
@@ -20,6 +21,7 @@ type InteractiveType struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	PkgName    string `json:"pkgName"`
+	PkgPath    string `json:"pkgPath"`
 	SourceFile string `json:"sourceFile,omitempty"`
 }
 
@@ -88,6 +90,7 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 			ID:         NodeID(iface.PkgName, iface.Name),
 			Name:       iface.PkgName + "." + iface.Name,
 			PkgName:    iface.PkgName,
+			PkgPath:    iface.PkgPath,
 			Methods:    methods,
 			SourceFile: iface.SourceFile,
 		}
@@ -100,6 +103,7 @@ func PrepareInteractiveData(result *analyzer.Result, opts DiagramOptions) Intera
 			ID:         NodeID(typ.PkgName, typ.Name),
 			Name:       typ.PkgName + "." + typ.Name,
 			PkgName:    typ.PkgName,
+			PkgPath:    typ.PkgPath,
 			SourceFile: typ.SourceFile,
 		}
 	}

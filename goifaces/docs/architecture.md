@@ -65,7 +65,7 @@ Key exported functions:
 - `GenerateMermaid()` — full class diagram from analysis results
 - `GeneratePackageMapMermaid()` — flowchart showing repository package hierarchy with per-package interface/type counts; each package node gets a distinct pastel background color from a fixed palette
 - `PreparePackageMapData()` — converts analysis results into a `[]*PackageMapNode` tree for client-side HTML treemap rendering; reuses the same tree-building logic as `GeneratePackageMapMermaid`
-- `PrepareInteractiveData()` — converts analysis results into `InteractiveData` struct with sanitized IDs and method signatures for the interactive web UI
+- `PrepareInteractiveData()` — converts analysis results into `InteractiveData` struct with sanitized IDs, method signatures, and full `PkgPath` for the interactive web UI; the `PkgPath` field on `InteractiveInterface` and `InteractiveType` enables client-side cross-referencing between treemap blocks and their interfaces/types
 - `FilterBySelection()` — filters a Result to only include selected items and their direct relations (used for testing the client-side JS filtering logic)
 - `NodeID()` / `SanitizeSignature()` — exported utilities for consistent node ID and method signature handling
 - `BuildSlides()` — legacy slide generation using a pluggable `Splitter` interface (retained for backward compatibility)
@@ -78,7 +78,7 @@ Slide splitting strategies. Defines the `Splitter` interface and `Group` type.
 
 ### `internal/server`
 HTTP server serving an interactive tabbed HTML UI with embedded Mermaid.js rendering. Three tabs:
-- **Package Map** — native HTML/CSS squarified treemap visualization of the package hierarchy; uses vanilla JS with no external libraries; fills the entire viewport with proportionally-sized rectangles; rendered immediately on page load
+- **Package Map** — native HTML/CSS squarified treemap visualization of the package hierarchy; uses vanilla JS with no external libraries; fills the entire viewport with proportionally-sized rectangles; rendered immediately on page load; clicking a package block with interfaces or types shows a floating overlay listing the package's interfaces and types (click again or click outside to dismiss); client-side lookup maps (`pkgInterfaces`, `pkgTypes`) are built from the `data` JSON at init time, keyed by `pkgPath`
 - **Implementations** — scrollable checkbox list of all implementation types; selecting items dynamically generates a Mermaid class diagram showing only selected items and their direct relations
 - **Interfaces** — scrollable checkbox list of all interfaces with the same filtering behavior
 
