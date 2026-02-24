@@ -163,9 +163,7 @@ func main() {
 		fmt.Printf("Wrote diagram to %s\n", *output)
 	} else {
 		// Server mode: interactive tabbed UI
-		pkgMapMermaid := diagram.GeneratePackageMapMermaid(result, diagramOpts)
 		interactiveData := diagram.PrepareInteractiveData(result, diagramOpts)
-		interactiveData.PackageMapMermaid = pkgMapMermaid
 		interactiveData.PackageMapNodes = diagram.PreparePackageMapData(result)
 		interactiveData.RepoAddress = input
 

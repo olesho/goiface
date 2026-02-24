@@ -398,8 +398,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
   <h1>goifaces — {{.RepoAddress}}</h1>
 
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="pkgmap">Package Map</button>
-    <button class="tab-btn" data-tab="pkgmap-html">Package Map (html)</button>
+    <button class="tab-btn active" data-tab="pkgmap-html">Package Map</button>
     <button class="tab-btn" data-tab="impls">Implementations</button>
     <button class="tab-btn" data-tab="ifaces">Interfaces</button>
   </div>
@@ -408,20 +407,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     <button id="zoom-in" title="Zoom In">+ Zoom In</button>
     <button id="zoom-out" title="Zoom Out">- Zoom Out</button>
     <button id="zoom-reset" title="Reset Zoom">Reset</button>
-    <button id="copy-src" title="Copy Mermaid Source">Copy Source</button>
+    <button id="copy-src" title="Copy Source">Copy Source</button>
   </div>
 
   <!-- Package Map tab -->
-  <div class="tab-panel active full-width" id="panel-pkgmap">
-    <div class="diagram-viewport">
-      <div class="diagram-container" id="pkgmap-container">
-        <pre class="mermaid" id="pkgmap-mermaid">{{.PackageMapMermaid}}</pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Package Map HTML tab -->
-  <div class="tab-panel full-width" id="panel-pkgmap-html">
+  <div class="tab-panel active full-width" id="panel-pkgmap-html">
     <div class="treemap-viewport" id="pkgmap-html-viewport">
       <div class="treemap-container" id="pkgmap-html-container"></div>
     </div>
@@ -478,9 +468,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     (function() {
       var data = {{.DataJSON}};
       var pkgMapData = {{.PackageMapJSON}};
-      var currentTab = 'pkgmap';
+      var currentTab = 'pkgmap-html';
       var currentMermaidSource = '';
-      var pkgMapRendered = false;
       var pkgMapHtmlRendered = false;
 
       // Pastel palette matching Go-side colors
@@ -825,9 +814,6 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
         document.getElementById('panel-' + tab).classList.add('active');
 
-        if (tab === 'pkgmap' && !pkgMapRendered) {
-          renderPackageMap();
-        }
         if (tab === 'pkgmap-html' && !pkgMapHtmlRendered) {
           requestAnimationFrame(function() {
             layoutTreemap();
@@ -836,30 +822,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
       }
 
-      function renderPackageMap() {
-        var pre = document.getElementById('pkgmap-mermaid');
-        mermaid.run({ nodes: [pre] }).then(function() {
-          fixSvgWidth(pre);
-          pkgMapRendered = true;
-          currentMermaidSource = pre.getAttribute('data-original') || '';
-        });
-        // Save original source before mermaid replaces it
-        pre.setAttribute('data-original', pre.textContent);
-      }
-
-      // Initial render of package map (deferred to let the page paint first)
-      var pkgPre = document.getElementById('pkgmap-mermaid');
-      pkgPre.setAttribute('data-original', pkgPre.textContent);
-      pkgPre.textContent = 'Loading diagram...';
+      // Initial render of treemap on page load
       requestAnimationFrame(function() {
-        setTimeout(function() {
-          pkgPre.textContent = pkgPre.getAttribute('data-original');
-          mermaid.run({ nodes: [pkgPre] }).then(function() {
-            fixSvgWidth(pkgPre);
-            pkgMapRendered = true;
-            currentMermaidSource = pkgPre.getAttribute('data-original');
-          });
-        }, 0);
+        layoutTreemap();
+        pkgMapHtmlRendered = true;
       });
 
       function fixSvgWidth(pre) {
@@ -1050,7 +1016,6 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       var maxScale = 10;
 
       function getActiveContainer() {
-        if (currentTab === 'pkgmap') return document.getElementById('pkgmap-container');
         if (currentTab === 'pkgmap-html') return document.getElementById('pkgmap-html-container');
         if (currentTab === 'ifaces') return document.getElementById('ifaces-diagram-container');
         return document.getElementById('impls-diagram-container');
@@ -1075,9 +1040,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       document.getElementById('copy-src').addEventListener('click', function() {
         var src = '';
-        if (currentTab === 'pkgmap') {
-          src = document.getElementById('pkgmap-mermaid').getAttribute('data-original') || '';
-        } else if (currentTab === 'pkgmap-html') {
+        if (currentTab === 'pkgmap-html') {
           src = buildTreemapText(pkgMapData, '');
         } else {
           src = currentMermaidSource;
@@ -1121,10 +1084,9 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
 // interactiveData holds all data passed to the interactive HTML template.
 type interactiveData struct {
-	PackageMapMermaid string
-	DataJSON          template.JS
-	PackageMapJSON    template.JS
-	RepoAddress       string
+	DataJSON       template.JS
+	PackageMapJSON template.JS
+	RepoAddress    string
 }
 
 // ServeInteractive starts the HTTP server with interactive tabbed UI.
@@ -1155,10 +1117,9 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 	}
 
 	templateData := interactiveData{
-		PackageMapMermaid: data.PackageMapMermaid,
-		DataJSON:          template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
-		PackageMapJSON:    template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
-		RepoAddress:       data.RepoAddress,
+		DataJSON:       template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
+		PackageMapJSON: template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
+		RepoAddress:    data.RepoAddress,
 	}
 
 	mux := http.NewServeMux()
@@ -1170,12 +1131,6 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 			logger.Error("failed to render interactive template", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
-	})
-
-	mux.HandleFunc("/mermaid.md", func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("request received", "method", r.Method, "path", r.URL.Path)
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte(data.PackageMapMermaid))
 	})
 
 	addr := fmt.Sprintf(":%d", port)

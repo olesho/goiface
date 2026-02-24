@@ -42,12 +42,11 @@ type PackageMapNode struct {
 
 // InteractiveData holds all data needed for the interactive tabbed UI.
 type InteractiveData struct {
-	PackageMapMermaid string                 `json:"packageMapMermaid"`
-	PackageMapNodes   []*PackageMapNode      `json:"packageMapNodes,omitempty"`
-	Interfaces        []InteractiveInterface `json:"interfaces"`
-	Types             []InteractiveType      `json:"types"`
-	Relations         []InteractiveRelation  `json:"relations"`
-	RepoAddress       string                 `json:"repoAddress"`
+	PackageMapNodes []*PackageMapNode      `json:"packageMapNodes,omitempty"`
+	Interfaces      []InteractiveInterface `json:"interfaces"`
+	Types           []InteractiveType      `json:"types"`
+	Relations       []InteractiveRelation  `json:"relations"`
+	RepoAddress     string                 `json:"repoAddress"`
 }
 
 // PrepareInteractiveData converts an analyzer.Result into the data structure
