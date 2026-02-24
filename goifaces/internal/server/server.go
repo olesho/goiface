@@ -605,6 +605,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       var tooltip = document.getElementById('treemap-tooltip');
       var TREEMAP_GAP = 4;
+      var MAX_BLOCK_HEIGHT = 120;
 
       function renderTreemap(container, nodes, rect, depth, colorIdx) {
         if (!nodes || nodes.length === 0) {
@@ -652,12 +653,13 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               var selfFraction = selfValue / (selfValue + childrenValue);
               var selfH = innerRect.h * selfFraction;
 
+              var renderedSelfH = Math.min(MAX_BLOCK_HEIGHT, Math.max(0, selfH));
               var selfNode = document.createElement('div');
               selfNode.className = 'treemap-node';
               selfNode.style.left = innerRect.x + 'px';
               selfNode.style.top = innerRect.y + 'px';
               selfNode.style.width = innerRect.w + 'px';
-              selfNode.style.height = Math.max(0, selfH) + 'px';
+              selfNode.style.height = renderedSelfH + 'px';
               selfNode.style.background = treemapPalette[(ci + 1) % treemapPalette.length].fill;
               selfNode.style.color = color.text;
 
@@ -672,7 +674,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               attachTooltip(selfNode, d);
               group.appendChild(selfNode);
 
-              innerRect = {x: innerRect.x, y: innerRect.y + selfH, w: innerRect.w, h: Math.max(0, innerRect.h - selfH)};
+              innerRect = {x: innerRect.x, y: innerRect.y + renderedSelfH, w: innerRect.w, h: Math.max(0, innerRect.h - renderedSelfH)};
             }
 
             colorIdx = renderTreemap(group, d.children, innerRect, depth + 1, ci + 1);
@@ -684,7 +686,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             node.style.left = (p.x + TREEMAP_GAP) + 'px';
             node.style.top = (p.y + TREEMAP_GAP) + 'px';
             node.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
-            node.style.height = Math.max(0, p.h - 2 * TREEMAP_GAP) + 'px';
+            node.style.height = Math.min(MAX_BLOCK_HEIGHT, Math.max(0, p.h - 2 * TREEMAP_GAP)) + 'px';
             node.style.background = color.fill;
             node.style.color = color.text;
 
