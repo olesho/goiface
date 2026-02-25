@@ -562,7 +562,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         </summary>
         <div class="sidebar-section-body" id="impls-list"></div>
       </details>
-      <details class="sidebar-section" open>
+      <details class="sidebar-section">
         <summary class="sidebar-section-header">
           Interfaces
           <span class="sidebar-section-actions">
@@ -1093,6 +1093,17 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       document.getElementById('ifaces-clear').addEventListener('click', function() {
         document.querySelectorAll('.iface-cb').forEach(function(cb) { cb.checked = false; });
         onSelectionChange();
+      });
+
+      // Accordion: only one sidebar section open at a time
+      document.querySelectorAll('.sidebar-section').forEach(function(details) {
+        details.addEventListener('toggle', function() {
+          if (this.open) {
+            document.querySelectorAll('.sidebar-section').forEach(function(other) {
+              if (other !== details) other.removeAttribute('open');
+            });
+          }
+        });
       });
 
       // Tab switching
