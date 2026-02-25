@@ -82,6 +82,20 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       .entity-list-actions button:hover {
         background-color: #444;
       }
+      .sidebar-section {
+        border-bottom-color: #444;
+      }
+      .sidebar-section-header {
+        background-color: #2d2d44;
+      }
+      .sidebar-section-actions button {
+        background-color: #333;
+        color: #e0e0e0;
+        border-color: #555;
+      }
+      .sidebar-section-actions button:hover {
+        background-color: #444;
+      }
     }
 
     h1 {
@@ -221,6 +235,50 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     .entity-list .pkg-name {
       color: #888;
       font-size: 0.75rem;
+    }
+
+    .sidebar-section {
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sidebar-section:last-child {
+      border-bottom: none;
+    }
+    .sidebar-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0.4rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      position: sticky;
+      top: 0;
+      background-color: #fff;
+      z-index: 1;
+    }
+    .sidebar-section-header::-webkit-details-marker {
+      margin-right: 0.3rem;
+    }
+    .sidebar-section-actions {
+      display: flex;
+      gap: 0.25rem;
+    }
+    .sidebar-section-actions button {
+      padding: 0.15rem 0.4rem;
+      font-size: 0.7rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #f8f9fa;
+      color: #212529;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+    .sidebar-section-actions button:hover {
+      background-color: #e9ecef;
+    }
+    .sidebar-section-body {
+      padding: 0 0 0.3rem 0;
     }
 
     .diagram-viewport {
@@ -471,8 +529,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="pkgmap-html">Package Map</button>
-    <button class="tab-btn" data-tab="impls">Implementations</button>
-    <button class="tab-btn" data-tab="ifaces">Interfaces</button>
+    <button class="tab-btn" data-tab="structures">Structures</button>
   </div>
 
   <div class="controls">
@@ -491,34 +548,34 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <div class="treemap-tooltip" id="treemap-tooltip"></div>
 
-  <!-- Implementations tab -->
-  <div class="tab-panel" id="panel-impls">
-    <div class="entity-list" id="impls-list">
-      <div class="entity-list-actions">
-        <button id="impls-all" title="Select all implementations">All</button>
-        <button id="impls-clear" title="Deselect all implementations">Clear</button>
-      </div>
+  <!-- Structures tab -->
+  <div class="tab-panel" id="panel-structures">
+    <div class="entity-list" id="structures-list">
+      <details class="sidebar-section" open>
+        <summary class="sidebar-section-header">
+          Implementations
+          <span class="sidebar-section-actions">
+            <button id="impls-all" title="Select all implementations">All</button>
+            <button id="impls-clear" title="Deselect all implementations">Clear</button>
+          </span>
+        </summary>
+        <div class="sidebar-section-body" id="impls-list"></div>
+      </details>
+      <details class="sidebar-section" open>
+        <summary class="sidebar-section-header">
+          Interfaces
+          <span class="sidebar-section-actions">
+            <button id="ifaces-all" title="Select all interfaces">All</button>
+            <button id="ifaces-clear" title="Deselect all interfaces">Clear</button>
+          </span>
+        </summary>
+        <div class="sidebar-section-body" id="ifaces-list"></div>
+      </details>
     </div>
     <div class="diagram-viewport">
-      <div class="diagram-container" id="impls-diagram-container">
-        <div class="placeholder-msg" id="impls-placeholder">Select items from the list to view their relationships</div>
-        <pre class="mermaid" id="impls-mermaid" style="display:none;"></pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Interfaces tab -->
-  <div class="tab-panel" id="panel-ifaces">
-    <div class="entity-list" id="ifaces-list">
-      <div class="entity-list-actions">
-        <button id="ifaces-all" title="Select all interfaces">All</button>
-        <button id="ifaces-clear" title="Deselect all interfaces">Clear</button>
-      </div>
-    </div>
-    <div class="diagram-viewport">
-      <div class="diagram-container" id="ifaces-diagram-container">
-        <div class="placeholder-msg" id="ifaces-placeholder">Select items from the list to view their relationships</div>
-        <pre class="mermaid" id="ifaces-mermaid" style="display:none;"></pre>
+      <div class="diagram-container" id="structures-diagram-container">
+        <div class="placeholder-msg" id="structures-placeholder">Select items from the list to view their relationships</div>
+        <pre class="mermaid" id="structures-mermaid" style="display:none;"></pre>
       </div>
     </div>
   </div>
@@ -1108,41 +1165,29 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       }
 
       function showPlaceholder() {
-        ['impls', 'ifaces'].forEach(function(tab) {
-          document.getElementById(tab + '-placeholder').style.display = 'block';
-          document.getElementById(tab + '-mermaid').style.display = 'none';
-        });
+        document.getElementById('structures-placeholder').style.display = 'block';
+        document.getElementById('structures-mermaid').style.display = 'none';
       }
 
       function renderSelectionDiagram(src) {
-        ['impls', 'ifaces'].forEach(function(tab) {
-          var placeholder = document.getElementById(tab + '-placeholder');
-          var pre = document.getElementById(tab + '-mermaid');
-          placeholder.style.display = 'none';
-          // Reset the pre element for mermaid re-render
-          pre.removeAttribute('data-processed');
-          pre.innerHTML = '';
-          pre.textContent = src;
-          pre.style.display = 'block';
-        });
+        var placeholder = document.getElementById('structures-placeholder');
+        var pre = document.getElementById('structures-mermaid');
+        placeholder.style.display = 'none';
+        pre.removeAttribute('data-processed');
+        pre.innerHTML = '';
+        pre.textContent = src;
+        pre.style.display = 'block';
 
-        // Render the diagram in the currently visible tab
-        var activePreId = currentTab === 'ifaces' ? 'ifaces-mermaid' : 'impls-mermaid';
-        var activePre = document.getElementById(activePreId);
         try {
-          mermaid.run({ nodes: [activePre] }).then(function() {
-            fixSvgWidth(activePre);
-            // Copy rendered SVG to the other tab's pre
-            var otherPreId = activePreId === 'impls-mermaid' ? 'ifaces-mermaid' : 'impls-mermaid';
-            var otherPre = document.getElementById(otherPreId);
-            otherPre.innerHTML = activePre.innerHTML;
+          mermaid.run({ nodes: [pre] }).then(function() {
+            fixSvgWidth(pre);
           }).catch(function(err) {
-            activePre.textContent = src;
-            activePre.style.whiteSpace = 'pre-wrap';
+            pre.textContent = src;
+            pre.style.whiteSpace = 'pre-wrap';
           });
         } catch(err) {
-          activePre.textContent = src;
-          activePre.style.whiteSpace = 'pre-wrap';
+          pre.textContent = src;
+          pre.style.whiteSpace = 'pre-wrap';
         }
       }
 
@@ -1255,8 +1300,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
       function getActiveContainer() {
         if (currentTab === 'pkgmap-html') return document.getElementById('pkgmap-html-container');
-        if (currentTab === 'ifaces') return document.getElementById('ifaces-diagram-container');
-        return document.getElementById('impls-diagram-container');
+        return document.getElementById('structures-diagram-container');
       }
 
       function applyZoom() {
