@@ -64,7 +64,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         background-color: #2d2d44;
         border-color: #444;
       }
-      .entity-list label:hover {
+      .entity-list label:hover,
+      .sidebar-section-body label:hover {
         background-color: #3d3d5c;
       }
       .placeholder-msg {
@@ -194,7 +195,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       gap: 0.4rem;
     }
 
-    .entity-list label {
+    .entity-list label,
+    .sidebar-section-body label {
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -205,11 +207,13 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       line-height: 1.3;
     }
 
-    .entity-list label:hover {
+    .entity-list label:hover,
+    .sidebar-section-body label:hover {
       background-color: #f0f0f0;
     }
 
-    .entity-list input[type="checkbox"] {
+    .entity-list input[type="checkbox"],
+    .sidebar-section-body input[type="checkbox"] {
       flex-shrink: 0;
     }
 
@@ -241,7 +245,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       background-color: #e9ecef;
     }
 
-    .entity-list .pkg-name {
+    .entity-list .pkg-name,
+    .sidebar-section-body .pkg-name {
       color: #888;
       font-size: 0.75rem;
     }
