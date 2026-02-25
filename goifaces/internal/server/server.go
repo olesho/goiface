@@ -178,6 +178,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       width: 260px;
       min-width: 260px;
       max-height: calc(100vh - 200px);
+      align-self: flex-start;
       overflow-y: auto;
       border: 1px solid #ccc;
       border-radius: 6px;
