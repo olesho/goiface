@@ -83,9 +83,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         background-color: #444;
       }
       .sidebar-section {
-        border-bottom-color: #444;
-      }
-      .sidebar-section-header {
+        border-color: #444;
         background-color: #2d2d44;
       }
       .sidebar-section-actions button {
@@ -186,6 +184,16 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       padding: 0.5rem;
     }
 
+    .sidebar-col {
+      width: 260px;
+      min-width: 260px;
+      max-height: calc(100vh - 200px);
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
     .entity-list label {
       display: flex;
       align-items: center;
@@ -239,24 +247,25 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     }
 
     .sidebar-section {
-      border-bottom: 1px solid #e0e0e0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background-color: #fff;
+      padding: 0.3rem 0.5rem;
     }
-    .sidebar-section:last-child {
-      border-bottom: none;
+    .sidebar-section[open] {
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
     }
     .sidebar-section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.4rem 0.4rem;
+      padding: 0.3rem 0.1rem;
       font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
       user-select: none;
-      position: sticky;
-      top: 0;
-      background-color: #fff;
-      z-index: 1;
     }
     .sidebar-section-header::-webkit-details-marker {
       margin-right: 0.3rem;
@@ -551,8 +560,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 
   <!-- Structures tab -->
   <div class="tab-panel" id="panel-structures">
-    <div class="entity-list" id="structures-list">
-      <details class="sidebar-section" open>
+    <div class="sidebar-col" id="structures-list">
+      <details class="sidebar-section" open style="order:1">
         <summary class="sidebar-section-header">
           Implementations
           <span class="sidebar-section-actions">
@@ -562,7 +571,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         </summary>
         <div class="sidebar-section-body" id="impls-list"></div>
       </details>
-      <details class="sidebar-section">
+      <details class="sidebar-section" style="order:0">
         <summary class="sidebar-section-header">
           Interfaces
           <span class="sidebar-section-actions">
@@ -1095,12 +1104,16 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         onSelectionChange();
       });
 
-      // Accordion: only one sidebar section open at a time
+      // Accordion: only one sidebar section open at a time, collapsed on top
       document.querySelectorAll('.sidebar-section').forEach(function(details) {
         details.addEventListener('toggle', function() {
           if (this.open) {
+            this.style.order = '1';
             document.querySelectorAll('.sidebar-section').forEach(function(other) {
-              if (other !== details) other.removeAttribute('open');
+              if (other !== details) {
+                other.removeAttribute('open');
+                other.style.order = '0';
+              }
             });
           }
         });
