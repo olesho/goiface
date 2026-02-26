@@ -7,7 +7,12 @@ goifaces is a Go CLI tool that analyzes Go codebases and produces Mermaid class 
 ## Data Flow
 
 ```
-Input (path/URL) → Resolver → Analyzer → Filter → Enricher Pipeline → Diagram Generator → Server/File
+With argument:
+  Input (path/URL) → Resolver → Analyzer → Filter → Enricher Pipeline → Diagram Generator → Server/File
+
+Without argument (landing page mode):
+  No input → Server (landing page) → User enters path → POST /api/load
+           → Resolver → Analyzer → Filter → Enricher Pipeline → Diagram Generator → Interactive UI
 ```
 
 ## Package Layout
@@ -76,8 +81,25 @@ Key exported functions:
 Slide splitting strategies. Defines the `Splitter` interface and `Group` type.
 - **HubAndSpoke** — identifies high-connectivity interfaces (hubs, connections >= threshold) that repeat on every detail slide, then chunks remaining types (spokes) into groups. Non-hub interfaces are attached to the chunk containing their connected types. A post-filter in `subResultForSplitGroup` removes orphaned interfaces and types that have no surviving relations on a given slide.
 
-### `internal/server`
-HTTP server serving an interactive tabbed HTML UI with embedded Mermaid.js rendering. Three tabs:
+### `internal/server/analyze.go`
+Extracted analysis pipeline shared by CLI and server modes.
+- **`AnalysisConfig`** — holds pipeline parameters: `Input`, `Filter`, `IncludeStdlib`, `IncludeUnexported`
+- **`RunAnalysis(ctx, cfg, logger)`** — executes the full resolve → analyze → filter → enrich → prepare pipeline; returns `InteractiveData`, a cleanup function, and an error
+
+### `internal/server` (server.go)
+HTTP server serving an interactive tabbed HTML UI with embedded Mermaid.js rendering.
+
+**`serverState`** — holds mutable server state protected by a `sync.RWMutex`. Fields: `data *InteractiveData`, `tmpl *template.Template`, `cleanup func()`. When `data` is nil the server renders the landing page; once data is loaded via `/api/load` it switches to the interactive template.
+
+**`ServeInteractiveNoData(ctx, port, openBrowser, logger)`** — starts the HTTP server without pre-loaded analysis data. `GET /` renders the landing page (path input form) when no data is loaded, or the full interactive UI once data has been loaded. Blocks until the context is cancelled.
+
+**`POST /api/load`** — accepts `{"path": "<local-path>"}`, runs the analysis pipeline via `RunAnalysis`, and swaps the server state to the interactive view. Validation rules:
+- Request body must be valid JSON (400 otherwise)
+- `path` field is required and trimmed (400 if empty)
+- HTTP/HTTPS URLs are rejected (400 — use the `-path` CLI flag for GitHub URLs)
+- On success returns `{"ok": true}`; on analysis failure returns `{"error": "<message>"}`
+
+Three tabs:
 - **Package Map** — native HTML/CSS squarified treemap visualization of the package hierarchy; uses vanilla JS with no external libraries; fills the entire viewport with proportionally-sized rectangles; rendered immediately on page load; clicking a package block with interfaces or types shows a floating overlay listing the package's interfaces and types (click again or click outside to dismiss); client-side lookup maps (`pkgInterfaces`, `pkgTypes`) are built from the `data` JSON at init time, keyed by `pkgPath`
 - **Implementations** — scrollable checkbox list of all implementation types; selecting items dynamically generates a Mermaid class diagram showing only selected items and their direct relations
 - **Interfaces** — scrollable checkbox list of all interfaces with the same filtering behavior

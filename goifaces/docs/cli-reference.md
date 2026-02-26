@@ -3,13 +3,20 @@
 ## Usage
 
 ```
-goifaces [flags] <path-or-url>
+goifaces [flags] [path-or-url]
 ```
 
-The first positional argument is the Go code to analyze. Can be:
-- Local directory: `./my-project`
-- Sub-package: `./my-project/internal/auth`
-- GitHub URL: `https://github.com/user/repo`
+The positional argument is optional. Can be:
+- **Omitted:** starts the server with a landing page where you enter a path in the browser
+- **Local directory:** `./my-project`
+- **Sub-package:** `./my-project/internal/auth`
+- **GitHub URL:** `https://github.com/user/repo`
+
+### No-argument (landing page) mode
+
+When no path or URL is given, goifaces starts the HTTP server and opens a landing page in the browser. The landing page presents a text input and "Analyze" button. Enter a local filesystem path to a Go repository and click Analyze — the server runs the analysis pipeline and reloads the page with the full interactive UI (Package Map, Implementations, Interfaces tabs).
+
+The `-output` flag still requires a positional path argument; using `-output` without a path prints an error.
 
 ## Flags
 
@@ -37,6 +44,9 @@ The first positional argument is the Go code to analyze. Can be:
 ## Examples
 
 ```bash
+# Start with landing page (no argument)
+goifaces
+
 # Analyze a local project, open in browser
 goifaces ./my-project
 
