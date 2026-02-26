@@ -233,3 +233,197 @@ func TestTreemapOverlayViewportOverflowClamping(t *testing.T) {
 		"overlay.style.maxHeight = Math.max(80, spaceBelow) + 'px'",
 		"overlay maxHeight should be clamped to at least 80px when space is limited")
 }
+
+func TestSharedSelectionStateFromOverlayToSidebar(t *testing.T) {
+	// Selecting an item in Package Map overlay must mutate shared state
+	// and call updateSelectionUI() to sync the Structures sidebar.
+
+	// Overlay checkbox change handler sets shared state for interfaces
+	assert.Contains(t, interactiveHTMLTemplate,
+		"selectedIfaceIDs[iface.id] = true;",
+		"overlay interface checkbox should set selectedIfaceIDs[iface.id] = true")
+
+	// Overlay checkbox change handler sets shared state for types
+	assert.Contains(t, interactiveHTMLTemplate,
+		"selectedTypeIDs[t.id] = true;",
+		"overlay type checkbox should set selectedTypeIDs[t.id] = true")
+
+	// After mutation, updateSelectionUI() syncs sidebar checkboxes
+	assert.Contains(t, interactiveHTMLTemplate,
+		`cb.checked = !!selectedTypeIDs[cb.value]`,
+		"updateSelectionUI should sync sidebar impl checkboxes from shared state")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`cb.checked = !!selectedIfaceIDs[cb.value]`,
+		"updateSelectionUI should sync sidebar iface checkboxes from shared state")
+}
+
+func TestSharedSelectionStateFromSidebarToOverlay(t *testing.T) {
+	// Checking a checkbox in Structures sidebar rebuilds shared state
+	// and syncs overlay checkboxes when the overlay is open.
+
+	// onSelectionChange rebuilds shared state from sidebar checkboxes
+	assert.Contains(t, interactiveHTMLTemplate,
+		".impl-cb:checked",
+		"onSelectionChange should read checked impl checkboxes to rebuild state")
+	assert.Contains(t, interactiveHTMLTemplate,
+		".iface-cb:checked",
+		"onSelectionChange should read checked iface checkboxes to rebuild state")
+
+	// updateSelectionUI syncs overlay checkboxes when open
+	assert.Contains(t, interactiveHTMLTemplate,
+		"if (activeOverlay)",
+		"updateSelectionUI should check if overlay is open before syncing")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`cb.getAttribute('data-id')`,
+		"overlay sync should read data-id attribute from overlay checkboxes")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`cb.getAttribute('data-kind')`,
+		"overlay sync should read data-kind attribute from overlay checkboxes")
+
+	// Overlay checkboxes initialized from shared state on creation
+	assert.Contains(t, interactiveHTMLTemplate,
+		"cb.checked = !!selectedIfaceIDs[iface.id]",
+		"overlay interface checkboxes should be initialized from shared state")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"cb.checked = !!selectedTypeIDs[t.id]",
+		"overlay type checkboxes should be initialized from shared state")
+}
+
+func TestSharedSelectionStateDeselection(t *testing.T) {
+	// Deselecting in either tab must update the other.
+
+	// Overlay deselection uses delete to remove from shared state
+	assert.Contains(t, interactiveHTMLTemplate,
+		"delete selectedIfaceIDs[iface.id]",
+		"overlay should use delete to deselect interface from shared state")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"delete selectedTypeIDs[t.id]",
+		"overlay should use delete to deselect type from shared state")
+
+	// Sidebar deselection: onSelectionChange rebuilds from :checked only,
+	// so unchecked items are naturally excluded
+	assert.Contains(t, interactiveHTMLTemplate,
+		"selectedTypeIDs = {};",
+		"onSelectionChange should reset selectedTypeIDs before rebuilding")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"selectedIfaceIDs = {};",
+		"onSelectionChange should reset selectedIfaceIDs before rebuilding")
+}
+
+func TestSharedSelectionStateBulkActions(t *testing.T) {
+	// Bulk actions (All/Clear buttons) must update shared state and
+	// Package Map indicators via onSelectionChange().
+
+	// impls-all sets all .impl-cb to checked, then calls onSelectionChange()
+	assert.Contains(t, interactiveHTMLTemplate,
+		`document.getElementById('impls-all')`,
+		"template should have impls-all bulk select button")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`document.getElementById('impls-clear')`,
+		"template should have impls-clear bulk deselect button")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`document.getElementById('ifaces-all')`,
+		"template should have ifaces-all bulk select button")
+	assert.Contains(t, interactiveHTMLTemplate,
+		`document.getElementById('ifaces-clear')`,
+		"template should have ifaces-clear bulk deselect button")
+
+	// Each bulk button handler calls onSelectionChange()
+	// impls-all: sets checked=true, calls onSelectionChange
+	assert.Contains(t, interactiveHTMLTemplate,
+		"document.querySelectorAll('.impl-cb').forEach(function(cb) { cb.checked = true; });\n        onSelectionChange();",
+		"impls-all handler should check all impl checkboxes then call onSelectionChange")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"document.querySelectorAll('.impl-cb').forEach(function(cb) { cb.checked = false; });\n        onSelectionChange();",
+		"impls-clear handler should uncheck all impl checkboxes then call onSelectionChange")
+
+	// updateSelectionUI (called via onSelectionChange → updateSelectionUI) calls
+	// updatePackageMapHighlights and updatePackageMapBadges
+	assert.Contains(t, interactiveHTMLTemplate,
+		"updatePackageMapHighlights();\n        updatePackageMapBadges();",
+		"updateSelectionUI should call updatePackageMapHighlights and updatePackageMapBadges")
+}
+
+func TestSharedSelectionStateTabSwitchPreservation(t *testing.T) {
+	// Tab switching must preserve selection state — module-level variables
+	// persist naturally, and switchTab must NOT reset them.
+
+	// selectedTypeIDs and selectedIfaceIDs are module-level variables
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var selectedTypeIDs = {};",
+		"selectedTypeIDs should be declared as module-level variable")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var selectedIfaceIDs = {};",
+		"selectedIfaceIDs should be declared as module-level variable")
+
+	// switchTab must NOT clear selection state
+	assert.Contains(t, interactiveHTMLTemplate,
+		"function switchTab(tab) {",
+		"template should define switchTab function")
+
+	// Extract the switchTab function body and verify it doesn't reset state.
+	// The function sets currentTab, toggles CSS classes, and conditionally
+	// renders the treemap — but must NOT touch selectedTypeIDs or selectedIfaceIDs.
+	switchTabIdx := strings.Index(interactiveHTMLTemplate, "function switchTab(tab) {")
+	if switchTabIdx < 0 {
+		t.Fatal("switchTab function must exist in the template")
+	}
+	// Find the next function declaration after switchTab to bound the body
+	rest := interactiveHTMLTemplate[switchTabIdx+1:]
+	nextFnIdx := strings.Index(rest, "\n      function ")
+	if nextFnIdx < 0 {
+		nextFnIdx = 1000
+	}
+	switchTabBody := interactiveHTMLTemplate[switchTabIdx : switchTabIdx+1+nextFnIdx]
+	assert.False(t, strings.Contains(switchTabBody, "selectedTypeIDs = {}"),
+		"switchTab must NOT reset selectedTypeIDs")
+	assert.False(t, strings.Contains(switchTabBody, "selectedIfaceIDs = {}"),
+		"switchTab must NOT reset selectedIfaceIDs")
+}
+
+func TestSharedSelectionStateDiagramReRender(t *testing.T) {
+	// Selection changes from Package Map must trigger diagram re-render
+	// via the chain: updateSelectionUI() → triggerDiagramUpdate() → buildMermaid.
+
+	// updateSelectionUI calls triggerDiagramUpdate at the end
+	assert.Contains(t, interactiveHTMLTemplate,
+		"updatingUI = false;\n        triggerDiagramUpdate();",
+		"updateSelectionUI should call triggerDiagramUpdate after clearing updatingUI flag")
+
+	// triggerDiagramUpdate calls buildMermaid and renderSelectionDiagram
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var mermaidSrc = buildMermaid(typeIDs, ifaceIDs)",
+		"triggerDiagramUpdate should call buildMermaid with selected IDs")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"renderSelectionDiagram(mermaidSrc)",
+		"triggerDiagramUpdate should call renderSelectionDiagram with mermaid source")
+
+	// When selection is empty, triggerDiagramUpdate shows placeholder
+	assert.Contains(t, interactiveHTMLTemplate,
+		"showPlaceholder();",
+		"triggerDiagramUpdate should show placeholder when selection is empty")
+}
+
+func TestSharedSelectionStateReEntrancyGuard(t *testing.T) {
+	// Re-entrancy guard prevents infinite loops between overlay and sidebar sync.
+
+	// updatingUI flag is declared
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var updatingUI = false;",
+		"template should declare updatingUI re-entrancy guard variable")
+
+	// updateSelectionUI sets updatingUI = true at start
+	assert.Contains(t, interactiveHTMLTemplate,
+		"updatingUI = true;",
+		"updateSelectionUI should set updatingUI = true at the start")
+
+	// updateSelectionUI clears updatingUI before triggerDiagramUpdate
+	assert.Contains(t, interactiveHTMLTemplate,
+		"updatingUI = false;",
+		"updateSelectionUI should clear updatingUI before calling triggerDiagramUpdate")
+
+	// onSelectionChange checks the guard and returns early
+	assert.Contains(t, interactiveHTMLTemplate,
+		"if (updatingUI) return;",
+		"onSelectionChange should return early when updatingUI is true")
+}
