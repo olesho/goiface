@@ -542,3 +542,88 @@ func TestSharedSelectionStateReEntrancyGuard(t *testing.T) {
 		"if (updatingUI) return;",
 		"onSelectionChange should return early when updatingUI is true")
 }
+
+func TestSwitchTabPkgMapHTMLRefreshesHighlightsAndBadges(t *testing.T) {
+	// When switching back to the Package Map tab (already rendered),
+	// switchTab must call updatePackageMapHighlights() and
+	// updatePackageMapBadges() inside a requestAnimationFrame so that
+	// visual indicators (borders + count badges) reflect the current
+	// selection state that may have changed while on another tab.
+
+	// The switchTab function must contain the else-if branch for 'pkgmap-html'
+	// that handles the already-rendered case (distinct from the initial render).
+	assert.Contains(t, interactiveHTMLTemplate,
+		`} else if (tab === 'pkgmap-html') {`,
+		"switchTab should have an else-if branch for pkgmap-html (already rendered case)")
+
+	// Extract the switchTab function body for focused assertions.
+	switchTabIdx := strings.Index(interactiveHTMLTemplate, "function switchTab(tab) {")
+	if switchTabIdx < 0 {
+		t.Fatal("switchTab function must exist in the template")
+	}
+	rest := interactiveHTMLTemplate[switchTabIdx+1:]
+	nextFnIdx := strings.Index(rest, "\n      function ")
+	if nextFnIdx < 0 {
+		nextFnIdx = 1000
+	}
+	switchTabBody := interactiveHTMLTemplate[switchTabIdx : switchTabIdx+1+nextFnIdx]
+
+	// The already-rendered pkgmap-html branch must use requestAnimationFrame
+	// and call both updatePackageMapHighlights and updatePackageMapBadges.
+	assert.Contains(t, switchTabBody,
+		"else if (tab === 'pkgmap-html') {\n          requestAnimationFrame(function() {\n            updatePackageMapHighlights();\n            updatePackageMapBadges();\n          });",
+		"pkgmap-html already-rendered branch should call updatePackageMapHighlights and updatePackageMapBadges inside requestAnimationFrame")
+}
+
+func TestSwitchTabPkgMapHTMLBranchIsSeparateFromInitialRender(t *testing.T) {
+	// The initial render branch checks !pkgMapHtmlRendered and calls
+	// layoutTreemap(). The re-visit branch must be a separate else-if
+	// that only refreshes highlights and badges, NOT re-layout.
+
+	// Extract the switchTab function body.
+	switchTabIdx := strings.Index(interactiveHTMLTemplate, "function switchTab(tab) {")
+	if switchTabIdx < 0 {
+		t.Fatal("switchTab function must exist in the template")
+	}
+	rest := interactiveHTMLTemplate[switchTabIdx+1:]
+	nextFnIdx := strings.Index(rest, "\n      function ")
+	if nextFnIdx < 0 {
+		nextFnIdx = 1000
+	}
+	switchTabBody := interactiveHTMLTemplate[switchTabIdx : switchTabIdx+1+nextFnIdx]
+
+	// The initial render branch must guard with !pkgMapHtmlRendered
+	assert.Contains(t, switchTabBody,
+		"if (tab === 'pkgmap-html' && !pkgMapHtmlRendered) {",
+		"initial render branch should check !pkgMapHtmlRendered")
+
+	// The initial render branch calls layoutTreemap, not the highlight/badge functions
+	assert.Contains(t, switchTabBody,
+		"layoutTreemap();\n            pkgMapHtmlRendered = true;",
+		"initial render branch should call layoutTreemap and set pkgMapHtmlRendered")
+
+	// The re-visit branch must NOT call layoutTreemap
+	// Find the else-if branch for pkgmap-html and verify it does not contain layoutTreemap
+	elseIfIdx := strings.Index(switchTabBody, "} else if (tab === 'pkgmap-html') {")
+	assert.Greater(t, elseIfIdx, 0,
+		"else-if pkgmap-html branch must exist after the initial render branch")
+
+	// Get the text from the else-if branch to the next else-if or closing brace
+	elseIfRest := switchTabBody[elseIfIdx:]
+	nextElseIdx := strings.Index(elseIfRest[1:], "} else if")
+	if nextElseIdx < 0 {
+		nextElseIdx = len(elseIfRest) - 1
+	} else {
+		nextElseIdx++ // adjust for the [1:] offset
+	}
+	elseIfBranch := elseIfRest[:nextElseIdx]
+
+	assert.NotContains(t, elseIfBranch, "layoutTreemap()",
+		"re-visit pkgmap-html branch must NOT call layoutTreemap — that is only for initial render")
+	assert.NotContains(t, elseIfBranch, "pkgMapHtmlRendered",
+		"re-visit pkgmap-html branch must NOT reference pkgMapHtmlRendered")
+	assert.Contains(t, elseIfBranch, "updatePackageMapHighlights()",
+		"re-visit pkgmap-html branch must call updatePackageMapHighlights")
+	assert.Contains(t, elseIfBranch, "updatePackageMapBadges()",
+		"re-visit pkgmap-html branch must call updatePackageMapBadges")
+}

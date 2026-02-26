@@ -1249,6 +1249,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             layoutTreemap();
             pkgMapHtmlRendered = true;
           });
+        } else if (tab === 'pkgmap-html') {
+          requestAnimationFrame(function() {
+            updatePackageMapHighlights();
+            updatePackageMapBadges();
+          });
         } else if (tab === 'structures') {
           requestAnimationFrame(function() {
             triggerDiagramUpdate();
