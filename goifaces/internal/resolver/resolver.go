@@ -36,10 +36,13 @@ func Resolve(ctx context.Context, input string, logger *slog.Logger) (dir string
 		return "", cleanup, fmt.Errorf("%s is not a directory", absPath)
 	}
 
-	// Find module root (nearest go.mod)
+	// Find module root (nearest go.mod) — optional
 	modRoot, err := findModuleRoot(absPath)
 	if err != nil {
-		return "", cleanup, err
+		// No go.mod found — use the input directory directly.
+		// Go analysis will be attempted but may produce empty results.
+		logger.Warn("no go.mod found, using directory as-is", "dir", absPath)
+		return absPath, cleanup, nil
 	}
 
 	logger.Info("resolved local directory", "input", input, "module_root", modRoot)

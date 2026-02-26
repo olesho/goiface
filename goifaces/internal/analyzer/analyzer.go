@@ -30,6 +30,11 @@ func Analyze(ctx context.Context, dir string, opts AnalyzeOptions, logger *slog.
 
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
+		if modulePath == "" && !goModExists(dir) {
+			// No go.mod and package loading failed — this is likely a non-Go directory.
+			logger.Warn("no Go packages found", "dir", dir, "error", err)
+			return &Result{}, nil
+		}
 		return nil, fmt.Errorf("loading packages: %w", err)
 	}
 
@@ -317,4 +322,10 @@ func resolveSourceFile(fset *token.FileSet, pos token.Pos, moduleRoot string) st
 		return position.Filename
 	}
 	return rel
+}
+
+// goModExists reports whether a go.mod file exists in dir.
+func goModExists(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "go.mod"))
+	return err == nil
 }
