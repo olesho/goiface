@@ -468,6 +468,25 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       box-shadow: 0 0 0 2px rgba(25,118,210,0.3);
     }
 
+    .treemap-node .tm-selection-count {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 10px;
+      background: #4a9c6d;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 20px;
+      text-align: center;
+      padding: 0 5px;
+      pointer-events: none;
+      z-index: 5;
+      box-sizing: border-box;
+    }
+
     .treemap-overlay {
       position: absolute;
       background: #fff;
@@ -537,6 +556,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         border-width: 2px;
         border-color: #7c8dff;
         box-shadow: 0 0 0 2px rgba(124,141,255,0.3);
+      }
+      .treemap-node .tm-selection-count {
+        background: #66bb6a;
+        color: #1a1a1a;
       }
       .treemap-group {
         border-color: rgba(255,255,255,0.2);
@@ -1122,6 +1145,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         var nodes = flattenTree(pkgMapData, 3);
         renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
         updatePackageMapHighlights();
+        updatePackageMapBadges();
       }
 
       // Build checkbox lists (deferred to avoid blocking initial paint)
@@ -1300,6 +1324,33 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         });
       }
 
+      function updatePackageMapBadges() {
+        document.querySelectorAll('.treemap-node[data-pkgpath]').forEach(function(node) {
+          var pkgPath = node.getAttribute('data-pkgpath');
+          var ifaces = pkgInterfaces[pkgPath] || [];
+          var types = pkgTypes[pkgPath] || [];
+          var count = 0;
+          for (var i = 0; i < ifaces.length; i++) {
+            if (selectedIfaceIDs[ifaces[i].id]) count++;
+          }
+          for (var i = 0; i < types.length; i++) {
+            if (selectedTypeIDs[types[i].id]) count++;
+          }
+          var badge = node.querySelector('.tm-selection-count');
+          if (count > 0) {
+            if (!badge) {
+              badge = document.createElement('span');
+              badge.className = 'tm-selection-count';
+              node.appendChild(badge);
+            }
+            badge.textContent = count;
+            badge.style.display = '';
+          } else if (badge) {
+            badge.style.display = 'none';
+          }
+        });
+      }
+
       function updateSelectionUI() {
         updatingUI = true;
 
@@ -1325,6 +1376,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
 
         updatePackageMapHighlights();
+        updatePackageMapBadges();
 
         updatingUI = false;
         triggerDiagramUpdate();
