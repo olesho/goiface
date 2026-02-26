@@ -133,3 +133,53 @@ func TestTreemapVerticalStackFallback(t *testing.T) {
 	assert.Contains(t, interactiveHTMLTemplate, "needsVerticalStack",
 		"template should check for overflow and trigger vertical stacking")
 }
+
+func TestTreemapOverlayNoMaxWidth(t *testing.T) {
+	// The .treemap-overlay CSS must NOT contain max-width: 400px because the
+	// overlay width is now set dynamically in JS to match the clicked box.
+	// It should still have min-width: 200px as a floor.
+	assert.False(t, strings.Contains(interactiveHTMLTemplate, "max-width: 400px"),
+		".treemap-overlay should not have max-width: 400px — width is set dynamically in JS")
+	assert.Contains(t, interactiveHTMLTemplate, "min-width: 200px",
+		".treemap-overlay should still have min-width: 200px as a minimum width floor")
+}
+
+func TestTreemapOverlayPositionsBelowClickedBox(t *testing.T) {
+	// The showPackageOverlay function must position the overlay BELOW the
+	// clicked box (not to the right). This means:
+	//   left uses nodeRect.left (left-aligned with box, not nodeRect.right)
+	//   top uses nodeRect.bottom (below box, not nodeRect.top)
+
+	// Left positioning: must use nodeRect.left, not nodeRect.right
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var left = nodeRect.left - vpRect.left + viewport.scrollLeft",
+		"overlay left should be computed from nodeRect.left (left-aligned with box)")
+	assert.False(t, strings.Contains(interactiveHTMLTemplate, "nodeRect.right - vpRect.left"),
+		"overlay left should NOT use nodeRect.right — overlay goes below, not to the right")
+
+	// Top positioning: must use nodeRect.bottom, not nodeRect.top for placement
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var top = nodeRect.bottom - vpRect.top + viewport.scrollTop + 4",
+		"overlay top should be computed from nodeRect.bottom with 4px gap")
+}
+
+func TestTreemapOverlayDynamicWidth(t *testing.T) {
+	// The overlay width must be set dynamically to match the clicked box width,
+	// with a minimum of 200px, using Math.max(200, nodeRect.width).
+	assert.Contains(t, interactiveHTMLTemplate,
+		"overlay.style.width = Math.max(200, nodeRect.width) + 'px'",
+		"overlay width should be set to Math.max(200, nodeRect.width)")
+}
+
+func TestTreemapOverlayViewportOverflowClamping(t *testing.T) {
+	// When the overlay would extend past the viewport bottom, the JS must
+	// clamp max-height using spaceBelow so the overlay stays within bounds.
+	assert.Contains(t, interactiveHTMLTemplate, "spaceBelow",
+		"overlay positioning should calculate spaceBelow for viewport clamping")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"var spaceBelow = vpRect.height - (nodeRect.bottom - vpRect.top) - 8",
+		"spaceBelow should be computed from viewport height minus overlay top offset")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"overlay.style.maxHeight = Math.max(80, spaceBelow) + 'px'",
+		"overlay maxHeight should be clamped to at least 80px when space is limited")
+}

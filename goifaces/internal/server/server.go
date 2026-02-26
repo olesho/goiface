@@ -467,7 +467,6 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       max-height: 300px;
       overflow-y: auto;
       min-width: 200px;
-      max-width: 400px;
       z-index: 50;
       padding: 8px 0;
     }
@@ -832,20 +831,34 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         var vpRect = viewport.getBoundingClientRect();
         var nodeRect = nodeEl.getBoundingClientRect();
 
-        // Calculate position relative to viewport
-        var left = nodeRect.right - vpRect.left + viewport.scrollLeft + 4;
-        var top = nodeRect.top - vpRect.top + viewport.scrollTop;
+        // Position overlay below the clicked block, left-aligned
+        var left = nodeRect.left - vpRect.left + viewport.scrollLeft;
+        var top = nodeRect.bottom - vpRect.top + viewport.scrollTop + 4;
 
-        // Check if overlay would go off the right edge
-        if (left + 200 > viewport.scrollWidth) {
-          left = nodeRect.left - vpRect.left + viewport.scrollLeft - 204;
-          if (left < 0) left = 0;
+        // Set width to match the clicked box (min 200px)
+        overlay.style.width = Math.max(200, nodeRect.width) + 'px';
+
+        // Clamp max-height so overlay doesn't overflow viewport bottom
+        var spaceBelow = vpRect.height - (nodeRect.bottom - vpRect.top) - 8;
+        if (spaceBelow <= 0) {
+          // No room below — position above the node
+          top = nodeRect.top - vpRect.top + viewport.scrollTop - 4;
+          viewport.appendChild(overlay);
+          var oh = overlay.offsetHeight;
+          top = top - oh;
+          if (top < 0) {
+            overlay.style.maxHeight = (oh + top) + 'px';
+            top = 0;
+          }
+        } else {
+          if (spaceBelow < 300) {
+            overlay.style.maxHeight = Math.max(80, spaceBelow) + 'px';
+          }
+          viewport.appendChild(overlay);
         }
 
         overlay.style.left = left + 'px';
         overlay.style.top = top + 'px';
-
-        viewport.appendChild(overlay);
         nodeEl.classList.add('tm-selected');
         activeOverlay = overlay;
         selectedNode = nodeEl;
