@@ -28,8 +28,8 @@ Every log record contains:
 |---|---|
 | DEBUG | Verbose internals: each type checked, each package loaded |
 | INFO | Progress milestones: packages loaded, N relations found, server started |
-| WARN | Partial failures: package load errors, skipped packages |
-| ERROR | Fatal failures: clone failed, no go.mod found |
+| WARN | Partial failures: package load errors, skipped packages, no go.mod found (local paths) |
+| ERROR | Fatal failures: clone failed, no go.mod found in cloned repo |
 
 ## Example Log Lines
 
