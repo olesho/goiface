@@ -54,11 +54,6 @@ func main() {
 	if input == "" {
 		input = *pathFlag
 	}
-	if input == "" {
-		fmt.Fprintln(os.Stderr, "Usage: goifaces [flags] <path-or-url>")
-		fs.PrintDefaults()
-		os.Exit(1)
-	}
 
 	// Parse log level
 	level, err := parseLogLevel(*logLevel)
@@ -86,6 +81,22 @@ func main() {
 		logger.Info("received signal, shutting down", "signal", sig)
 		cancel()
 	}()
+
+	if input == "" {
+		if *output != "" {
+			fmt.Fprintln(os.Stderr, "Error: -output requires a path or URL argument")
+			fs.PrintDefaults()
+			os.Exit(1)
+		}
+		openBrowser := !*noBrowser
+		fmt.Printf("Starting server on http://localhost:%d\n", *port)
+		if err := server.ServeInteractiveNoData(ctx, *port, openBrowser, logger); err != nil {
+			logger.Error("server error", "error", err)
+			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Step 1: Resolve input to local directory
 	fmt.Println("Resolving input...")
