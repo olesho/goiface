@@ -381,6 +381,41 @@ func TestSharedSelectionStateTabSwitchPreservation(t *testing.T) {
 		"switchTab must NOT reset selectedIfaceIDs")
 }
 
+func TestSwitchTabStructuresTriggersdiagramUpdate(t *testing.T) {
+	// Switching to the "structures" tab must call triggerDiagramUpdate()
+	// inside a requestAnimationFrame callback so the diagram is re-rendered
+	// with the current selection state.
+
+	// The switchTab function must contain the else-if branch for 'structures'
+	assert.Contains(t, interactiveHTMLTemplate,
+		`} else if (tab === 'structures') {`,
+		"switchTab should have an else-if branch for the structures tab")
+
+	// Extract the switchTab function body to verify the structures branch
+	// calls triggerDiagramUpdate inside requestAnimationFrame.
+	switchTabIdx := strings.Index(interactiveHTMLTemplate, "function switchTab(tab) {")
+	if switchTabIdx < 0 {
+		t.Fatal("switchTab function must exist in the template")
+	}
+	rest := interactiveHTMLTemplate[switchTabIdx+1:]
+	nextFnIdx := strings.Index(rest, "\n      function ")
+	if nextFnIdx < 0 {
+		nextFnIdx = 1000
+	}
+	switchTabBody := interactiveHTMLTemplate[switchTabIdx : switchTabIdx+1+nextFnIdx]
+
+	// The structures branch must use requestAnimationFrame
+	assert.Contains(t, switchTabBody,
+		"else if (tab === 'structures') {\n          requestAnimationFrame(function() {\n            triggerDiagramUpdate();\n          });",
+		"structures branch should call triggerDiagramUpdate() inside requestAnimationFrame")
+
+	// triggerDiagramUpdate must be called exactly once in the switchTab body
+	// (only in the structures branch, not unconditionally)
+	count := strings.Count(switchTabBody, "triggerDiagramUpdate()")
+	assert.Equal(t, 1, count,
+		"triggerDiagramUpdate should be called exactly once in switchTab (in the structures branch)")
+}
+
 func TestSharedSelectionStateDiagramReRender(t *testing.T) {
 	// Selection changes from Package Map must trigger diagram re-render
 	// via the chain: updateSelectionUI() → triggerDiagramUpdate() → buildMermaid.

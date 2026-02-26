@@ -1249,6 +1249,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             layoutTreemap();
             pkgMapHtmlRendered = true;
           });
+        } else if (tab === 'structures') {
+          requestAnimationFrame(function() {
+            triggerDiagramUpdate();
+          });
         }
       }
 
