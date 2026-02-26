@@ -1605,6 +1605,120 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
 </html>
 `
 
+const landingHTMLTemplate = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>goifaces</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+      transition: background-color 0.3s, color 0.3s;
+      background-color: #f8f9fa;
+      color: #212529;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #1a1a2e;
+        color: #e0e0e0;
+      }
+      input[type="text"] {
+        background-color: #2d2d44;
+        color: #e0e0e0;
+        border-color: #444;
+      }
+      button {
+        background-color: #2d2d44;
+        color: #e0e0e0;
+        border-color: #444;
+      }
+      button:hover {
+        background-color: #3d3d5c;
+      }
+    }
+
+    h1 { margin-bottom: 1.5rem; }
+
+    .form-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1rem;
+      cursor: pointer;
+      background-color: #fff;
+    }
+
+    button:hover { background-color: #e9ecef; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    #status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      min-height: 1.5em;
+    }
+
+    #status.error { color: #dc3545; }
+  </style>
+</head>
+<body>
+  <h1>goifaces</h1>
+  <div class="form-row">
+    <input type="text" id="repo-path" placeholder="Enter path to Go project or module">
+    <button id="analyze-btn" onclick="loadRepo()">Analyze</button>
+  </div>
+  <div id="status"></div>
+  <script>
+    function loadRepo() {
+      var input = document.getElementById('repo-path');
+      var btn = document.getElementById('analyze-btn');
+      var status = document.getElementById('status');
+      var val = input.value.trim();
+      if (!val) { status.textContent = 'Please enter a path.'; status.className = 'error'; return; }
+      btn.disabled = true;
+      status.textContent = 'Analyzing...';
+      status.className = '';
+      fetch('/api/load', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: val})})
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error(t); });
+          window.location.reload();
+        })
+        .catch(function(err) {
+          status.textContent = err.message || 'Analysis failed';
+          status.className = 'error';
+          btn.disabled = false;
+        });
+    }
+  </script>
+</body>
+</html>
+`
+
 // interactiveData holds all data passed to the interactive HTML template.
 type interactiveData struct {
 	DataJSON       template.JS

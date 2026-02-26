@@ -7,6 +7,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestLandingPageTemplateExists(t *testing.T) {
+	assert.Contains(t, landingHTMLTemplate, `id="repo-path"`,
+		"landing page should contain repo-path input")
+	assert.Contains(t, landingHTMLTemplate, `id="analyze-btn"`,
+		"landing page should contain analyze button")
+	assert.Contains(t, landingHTMLTemplate, `id="status"`,
+		"landing page should contain status div")
+	assert.Contains(t, landingHTMLTemplate, `fetch('/api/load'`,
+		"landing page should contain fetch call to /api/load")
+	assert.Contains(t, landingHTMLTemplate, `window.location.reload()`,
+		"landing page should reload on success")
+	assert.Contains(t, landingHTMLTemplate, `function loadRepo()`,
+		"landing page should define loadRepo function")
+}
+
 func TestMethodsLeftAlignCSS(t *testing.T) {
 	assert.True(t, strings.Contains(interactiveHTMLTemplate, ".methods-group"),
 		"template should contain .methods-group CSS selector")
