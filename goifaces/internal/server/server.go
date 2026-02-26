@@ -491,7 +491,15 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     .treemap-overlay-item {
       padding: 3px 12px;
       font-size: 0.8rem;
-      cursor: default;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .treemap-overlay-item input[type="checkbox"] {
+      margin: 0;
+      flex-shrink: 0;
     }
 
     .treemap-overlay-item:hover {
@@ -614,6 +622,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       var currentTab = 'pkgmap-html';
       var currentMermaidSource = '';
       var pkgMapHtmlRendered = false;
+
+      // Shared selection state (module-level, drives both overlay and sidebar)
+      var selectedTypeIDs = {};   // { [id]: true }
+      var selectedIfaceIDs = {};  // { [id]: true }
+      var updatingUI = false;     // re-entrancy guard for updateSelectionUI
 
       // Pastel palette matching Go-side colors
       var treemapPalette = [
@@ -806,10 +819,26 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
           sec.textContent = 'Interfaces';
           overlay.appendChild(sec);
           ifaces.forEach(function(iface) {
-            var item = document.createElement('div');
-            item.className = 'treemap-overlay-item';
-            item.textContent = iface.name.indexOf('.') >= 0 ? iface.name.split('.').pop() : iface.name;
-            overlay.appendChild(item);
+            var itemLabel = document.createElement('label');
+            itemLabel.className = 'treemap-overlay-item';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = !!selectedIfaceIDs[iface.id];
+            cb.setAttribute('data-id', iface.id);
+            cb.setAttribute('data-kind', 'iface');
+            cb.addEventListener('change', function() {
+              if (cb.checked) {
+                selectedIfaceIDs[iface.id] = true;
+              } else {
+                delete selectedIfaceIDs[iface.id];
+              }
+              updateSelectionUI();
+            });
+            var nameSpan = document.createElement('span');
+            nameSpan.textContent = iface.name.indexOf('.') >= 0 ? iface.name.split('.').pop() : iface.name;
+            itemLabel.appendChild(cb);
+            itemLabel.appendChild(nameSpan);
+            overlay.appendChild(itemLabel);
           });
         }
 
@@ -819,10 +848,26 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
           sec2.textContent = 'Types';
           overlay.appendChild(sec2);
           types.forEach(function(t) {
-            var item = document.createElement('div');
-            item.className = 'treemap-overlay-item';
-            item.textContent = t.name.indexOf('.') >= 0 ? t.name.split('.').pop() : t.name;
-            overlay.appendChild(item);
+            var itemLabel = document.createElement('label');
+            itemLabel.className = 'treemap-overlay-item';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = !!selectedTypeIDs[t.id];
+            cb.setAttribute('data-id', t.id);
+            cb.setAttribute('data-kind', 'type');
+            cb.addEventListener('change', function() {
+              if (cb.checked) {
+                selectedTypeIDs[t.id] = true;
+              } else {
+                delete selectedTypeIDs[t.id];
+              }
+              updateSelectionUI();
+            });
+            var nameSpan = document.createElement('span');
+            nameSpan.textContent = t.name.indexOf('.') >= 0 ? t.name.split('.').pop() : t.name;
+            itemLabel.appendChild(cb);
+            itemLabel.appendChild(nameSpan);
+            overlay.appendChild(itemLabel);
           });
         }
 
@@ -1186,25 +1231,61 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
       }
 
-      function onSelectionChange() {
-        var selectedTypeIDs = [];
-        document.querySelectorAll('.impl-cb:checked').forEach(function(cb) {
-          selectedTypeIDs.push(cb.value);
-        });
-        var selectedIfaceIDs = [];
-        document.querySelectorAll('.iface-cb:checked').forEach(function(cb) {
-          selectedIfaceIDs.push(cb.value);
-        });
+      function triggerDiagramUpdate() {
+        var typeIDs = Object.keys(selectedTypeIDs);
+        var ifaceIDs = Object.keys(selectedIfaceIDs);
 
-        if (selectedTypeIDs.length === 0 && selectedIfaceIDs.length === 0) {
+        if (typeIDs.length === 0 && ifaceIDs.length === 0) {
           showPlaceholder();
           currentMermaidSource = '';
           return;
         }
 
-        var mermaidSrc = buildMermaid(selectedTypeIDs, selectedIfaceIDs);
+        var mermaidSrc = buildMermaid(typeIDs, ifaceIDs);
         currentMermaidSource = mermaidSrc;
         renderSelectionDiagram(mermaidSrc);
+      }
+
+      function updateSelectionUI() {
+        updatingUI = true;
+
+        // Sync Structures sidebar checkboxes
+        document.querySelectorAll('.impl-cb').forEach(function(cb) {
+          cb.checked = !!selectedTypeIDs[cb.value];
+        });
+        document.querySelectorAll('.iface-cb').forEach(function(cb) {
+          cb.checked = !!selectedIfaceIDs[cb.value];
+        });
+
+        // Sync overlay checkboxes (if overlay is open)
+        if (activeOverlay) {
+          activeOverlay.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+            var id = cb.getAttribute('data-id');
+            var kind = cb.getAttribute('data-kind');
+            if (kind === 'iface') {
+              cb.checked = !!selectedIfaceIDs[id];
+            } else {
+              cb.checked = !!selectedTypeIDs[id];
+            }
+          });
+        }
+
+        updatingUI = false;
+        triggerDiagramUpdate();
+      }
+
+      function onSelectionChange() {
+        if (updatingUI) return;
+        // Rebuild shared state from sidebar checkboxes
+        selectedTypeIDs = {};
+        document.querySelectorAll('.impl-cb:checked').forEach(function(cb) {
+          selectedTypeIDs[cb.value] = true;
+        });
+        selectedIfaceIDs = {};
+        document.querySelectorAll('.iface-cb:checked').forEach(function(cb) {
+          selectedIfaceIDs[cb.value] = true;
+        });
+        updateSelectionUI();
       }
 
       function showPlaceholder() {
@@ -1234,11 +1315,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         }
       }
 
-      function buildMermaid(selectedTypeIDs, selectedIfaceIDs) {
+      function buildMermaid(typeIDList, ifaceIDList) {
         var typeSet = {};
-        selectedTypeIDs.forEach(function(id) { typeSet[id] = true; });
+        typeIDList.forEach(function(id) { typeSet[id] = true; });
         var ifaceSet = {};
-        selectedIfaceIDs.forEach(function(id) { ifaceSet[id] = true; });
+        ifaceIDList.forEach(function(id) { ifaceSet[id] = true; });
 
         // Find matching relations
         var relatedTypeIDs = {};
