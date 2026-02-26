@@ -382,7 +382,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       align-items: center;
       text-align: center;
       cursor: default;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, border-width 0.15s, box-shadow 0.15s;
       min-height: 36px;
       min-width: 80px;
     }
@@ -458,6 +458,16 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       box-shadow: 0 0 0 2px rgba(25,118,210,0.3);
     }
 
+    .treemap-node.tm-has-selection {
+      border: 3px solid #1976d2;
+      box-shadow: 0 0 0 2px rgba(25,118,210,0.25);
+    }
+
+    .treemap-node.tm-selected.tm-has-selection {
+      border: 2px solid #1976d2;
+      box-shadow: 0 0 0 2px rgba(25,118,210,0.3);
+    }
+
     .treemap-overlay {
       position: absolute;
       background: #fff;
@@ -515,6 +525,16 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         border-color: rgba(255,255,255,0.5);
       }
       .treemap-node.tm-selected {
+        border-color: #7c8dff;
+        box-shadow: 0 0 0 2px rgba(124,141,255,0.3);
+      }
+      .treemap-node.tm-has-selection {
+        border-width: 3px;
+        border-color: #7c8dff;
+        box-shadow: 0 0 0 2px rgba(124,141,255,0.25);
+      }
+      .treemap-node.tm-selected.tm-has-selection {
+        border-width: 2px;
         border-color: #7c8dff;
         box-shadow: 0 0 0 2px rgba(124,141,255,0.3);
       }
@@ -994,6 +1014,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               var renderedSelfH = Math.min(MAX_BLOCK_HEIGHT, Math.max(0, selfH));
               var selfNode = document.createElement('div');
               selfNode.className = 'treemap-node';
+              if (d.pkgPath) selfNode.setAttribute('data-pkgpath', d.pkgPath);
               selfNode.style.left = innerRect.x + 'px';
               selfNode.style.top = innerRect.y + 'px';
               selfNode.style.width = innerRect.w + 'px';
@@ -1022,6 +1043,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             // Leaf node
             var node = document.createElement('div');
             node.className = 'treemap-node';
+            if (d.pkgPath) node.setAttribute('data-pkgpath', d.pkgPath);
             node.style.left = (p.x + TREEMAP_GAP) + 'px';
             node.style.top = (p.y + TREEMAP_GAP) + 'px';
             node.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
@@ -1099,6 +1121,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         if (w <= 0 || h <= 0) return;
         var nodes = flattenTree(pkgMapData, 3);
         renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
+        updatePackageMapHighlights();
       }
 
       // Build checkbox lists (deferred to avoid blocking initial paint)
@@ -1246,6 +1269,37 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         renderSelectionDiagram(mermaidSrc);
       }
 
+      function updatePackageMapHighlights() {
+        // Build set of pkgPaths that contain at least one selected item
+        var activePkgs = {};
+        for (var pkg in pkgInterfaces) {
+          for (var i = 0; i < pkgInterfaces[pkg].length; i++) {
+            if (selectedIfaceIDs[pkgInterfaces[pkg][i].id]) {
+              activePkgs[pkg] = true;
+              break;
+            }
+          }
+        }
+        for (var pkg in pkgTypes) {
+          if (activePkgs[pkg]) continue;
+          for (var i = 0; i < pkgTypes[pkg].length; i++) {
+            if (selectedTypeIDs[pkgTypes[pkg][i].id]) {
+              activePkgs[pkg] = true;
+              break;
+            }
+          }
+        }
+        // Toggle class on all treemap nodes
+        document.querySelectorAll('.treemap-node[data-pkgpath]').forEach(function(el) {
+          var pkg = el.getAttribute('data-pkgpath');
+          if (activePkgs[pkg]) {
+            el.classList.add('tm-has-selection');
+          } else {
+            el.classList.remove('tm-has-selection');
+          }
+        });
+      }
+
       function updateSelectionUI() {
         updatingUI = true;
 
@@ -1269,6 +1323,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             }
           });
         }
+
+        updatePackageMapHighlights();
 
         updatingUI = false;
         triggerDiagramUpdate();
