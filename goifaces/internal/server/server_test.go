@@ -171,6 +171,56 @@ func TestTreemapOverlayDynamicWidth(t *testing.T) {
 		"overlay width should be set to Math.max(200, nodeRect.width)")
 }
 
+func TestTreemapOverlayFlipAboveWhenNoSpaceBelow(t *testing.T) {
+	// When spaceBelow <= 0 the overlay flips above the clicked node.
+	// Verify the flip-above coordinate computation.
+	assert.Contains(t, interactiveHTMLTemplate,
+		"top = nodeRect.top - vpRect.top + viewport.scrollTop - 4",
+		"flip-above top should be computed from nodeRect.top with 4px gap above")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"overlay.offsetHeight",
+		"flip-above branch must measure rendered overlay height")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"top = top - oh",
+		"flip-above must shift overlay upward by its rendered height")
+}
+
+func TestTreemapOverlayTopEdgeClamping(t *testing.T) {
+	// When the flipped-above overlay overflows the top edge (top < 0),
+	// maxHeight is shrunk and top is pinned to 0.
+	assert.Contains(t, interactiveHTMLTemplate,
+		"overlay.style.maxHeight = (oh + top) + 'px'",
+		"when top < 0, maxHeight should shrink to (oh + top) to fit available space")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"top = 0;",
+		"top should be pinned to 0 after maxHeight clamping")
+}
+
+func TestTreemapOverlayCSSPositioning(t *testing.T) {
+	// Verify the CSS positioning foundation that makes absolute overlay
+	// positioning work within the viewport container.
+	assert.Contains(t, interactiveHTMLTemplate,
+		".treemap-viewport {\n      flex: 1;\n      overflow: hidden;\n      padding: 0.5rem;\n      position: relative;",
+		".treemap-viewport must have position: relative to establish containing block")
+	assert.Contains(t, interactiveHTMLTemplate,
+		".treemap-overlay {\n      position: absolute;",
+		".treemap-overlay must have position: absolute for left/top positioning")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"z-index: 50",
+		".treemap-overlay must have z-index: 50 to render above treemap nodes")
+}
+
+func TestTreemapOverlayDefaultMaxHeight(t *testing.T) {
+	// Verify the CSS default max-height and the JS threshold that
+	// triggers dynamic override.
+	assert.Contains(t, interactiveHTMLTemplate,
+		"max-height: 300px",
+		".treemap-overlay CSS should set default max-height: 300px")
+	assert.Contains(t, interactiveHTMLTemplate,
+		"spaceBelow < 300",
+		"JS threshold for maxHeight override should match the CSS default of 300px")
+}
+
 func TestTreemapOverlayViewportOverflowClamping(t *testing.T) {
 	// When the overlay would extend past the viewport bottom, the JS must
 	// clamp max-height using spaceBelow so the overlay stays within bounds.
