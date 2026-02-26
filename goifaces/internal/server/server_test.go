@@ -404,6 +404,86 @@ func TestSharedSelectionStateDiagramReRender(t *testing.T) {
 		"triggerDiagramUpdate should show placeholder when selection is empty")
 }
 
+func TestPackageMapHasSelectionClass(t *testing.T) {
+	// Box with selected items has the fat border class (.tm-has-selection).
+	assert.Contains(t, interactiveHTMLTemplate, ".treemap-node.tm-has-selection",
+		"CSS selector for tm-has-selection should exist")
+	assert.Contains(t, interactiveHTMLTemplate, "border: 3px solid #1976d2",
+		"light-theme fat border should be 3px solid #1976d2")
+	assert.Contains(t, interactiveHTMLTemplate, "el.classList.add('tm-has-selection')",
+		"JS should add tm-has-selection class when package has selections")
+	assert.Contains(t, interactiveHTMLTemplate, "function updatePackageMapHighlights()",
+		"updatePackageMapHighlights function should exist")
+}
+
+func TestPackageMapNoSelectionRemovesClass(t *testing.T) {
+	// Box without selected items does NOT have the class (class is removed).
+	assert.Contains(t, interactiveHTMLTemplate, "el.classList.remove('tm-has-selection')",
+		"JS should remove tm-has-selection class when package has no selections")
+	assert.Contains(t, interactiveHTMLTemplate, "activePkgs[pkg]",
+		"activePkgs lookup should drive add/remove decision")
+}
+
+func TestPackageMapBadgeShowsCorrectCount(t *testing.T) {
+	// Count badge shows correct number of selected items per package.
+	assert.Contains(t, interactiveHTMLTemplate, "function updatePackageMapBadges()",
+		"updatePackageMapBadges function should exist")
+	assert.Contains(t, interactiveHTMLTemplate, "badge.textContent = count",
+		"badge text should be set to the computed count")
+	assert.Contains(t, interactiveHTMLTemplate, "badge.className = 'tm-selection-count'",
+		"badge should get the correct CSS class")
+	assert.Contains(t, interactiveHTMLTemplate, "if (selectedIfaceIDs[ifaces[i].id]) count++",
+		"badge count should include selected interfaces")
+	assert.Contains(t, interactiveHTMLTemplate, "if (selectedTypeIDs[types[i].id]) count++",
+		"badge count should include selected types")
+}
+
+func TestPackageMapBadgeHiddenWhenCountZero(t *testing.T) {
+	// Count badge is hidden when count is 0.
+	assert.Contains(t, interactiveHTMLTemplate, "badge.style.display = 'none'",
+		"badge should be hidden when count drops to 0")
+	assert.Contains(t, interactiveHTMLTemplate, "badge.style.display = ''",
+		"badge should be shown (display reset) when count > 0")
+}
+
+func TestPackageMapSelectionUpdatesIndicatorsRealTime(t *testing.T) {
+	// Selecting/deselecting items updates border and badge in real-time.
+	assert.Contains(t, interactiveHTMLTemplate, "updatePackageMapHighlights();",
+		"updatePackageMapHighlights should be called during UI sync")
+	assert.Contains(t, interactiveHTMLTemplate, "updatePackageMapBadges();",
+		"updatePackageMapBadges should be called during UI sync")
+	assert.Contains(t, interactiveHTMLTemplate, "function updateSelectionUI()",
+		"updateSelectionUI orchestrator function should exist")
+	assert.Contains(t, interactiveHTMLTemplate, "var updatingUI = false",
+		"updatingUI re-entrancy guard variable should be initialized")
+}
+
+func TestPackageMapClearAllRemovesHighlightsAndBadges(t *testing.T) {
+	// Clearing all selections removes all highlights and badges.
+	assert.Contains(t, interactiveHTMLTemplate,
+		"document.querySelectorAll('.treemap-node[data-pkgpath]').forEach",
+		"both highlight and badge functions should iterate all treemap nodes")
+	assert.Equal(t, 2,
+		strings.Count(interactiveHTMLTemplate, "document.querySelectorAll('.treemap-node[data-pkgpath]').forEach"),
+		"querySelectorAll on treemap nodes should appear exactly twice (highlights + badges)")
+}
+
+func TestPackageMapBadgeCSSStyle(t *testing.T) {
+	// Badge CSS styling is correct for both light and dark themes.
+	assert.Contains(t, interactiveHTMLTemplate, ".treemap-node .tm-selection-count",
+		"CSS selector for badge should exist")
+	assert.Contains(t, interactiveHTMLTemplate, ".treemap-node .tm-selection-count {\n      position: absolute;",
+		"badge should be absolutely positioned within its CSS block")
+	assert.Contains(t, interactiveHTMLTemplate, "top: 2px",
+		"badge should be anchored 2px from top")
+	assert.Contains(t, interactiveHTMLTemplate, "right: 2px",
+		"badge should be anchored 2px from right")
+	assert.Contains(t, interactiveHTMLTemplate, "pointer-events: none;\n      z-index: 5;",
+		"badge should not intercept clicks (anchored to badge z-index context)")
+	assert.Contains(t, interactiveHTMLTemplate, "z-index: 5",
+		"badge should render above node content")
+}
+
 func TestSharedSelectionStateReEntrancyGuard(t *testing.T) {
 	// Re-entrancy guard prevents infinite loops between overlay and sidebar sync.
 
