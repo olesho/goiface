@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/olehluchkiv/goifaces/internal/diagram"
@@ -1802,6 +1804,210 @@ func ServeInteractive(ctx context.Context, data diagram.InteractiveData, port in
 			return fmt.Errorf("HTTP server shutdown error: %w", err)
 		}
 		return nil
+	}
+}
+
+// serverState holds the mutable server state protected by a read-write mutex.
+// When data is nil the server renders the landing page; once data is loaded via
+// the /api/load endpoint it switches to the interactive template.
+type serverState struct {
+	mu      sync.RWMutex
+	data    *diagram.InteractiveData
+	tmpl    *template.Template
+	cleanup func()
+}
+
+func (s *serverState) get() (*diagram.InteractiveData, *template.Template) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data, s.tmpl
+}
+
+func (s *serverState) set(data *diagram.InteractiveData, tmpl *template.Template, cleanup func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cleanup != nil {
+		s.cleanup()
+	}
+	s.data = data
+	s.tmpl = tmpl
+	s.cleanup = cleanup
+}
+
+// close releases any resources held by the current state.
+func (s *serverState) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cleanup != nil {
+		s.cleanup()
+		s.cleanup = nil
+	}
+}
+
+// ServeInteractiveNoData starts the HTTP server without pre-loaded data.
+// GET / renders the landing page when no data is loaded, or the interactive
+// template once data has been loaded via POST /api/load.
+// It blocks until the context is cancelled.
+func ServeInteractiveNoData(ctx context.Context, port int, openBrowser bool, logger *slog.Logger) error {
+	logger = logger.With("component", "server")
+
+	landingTmpl, err := template.New("landing").Parse(landingHTMLTemplate)
+	if err != nil {
+		return fmt.Errorf("parsing landing HTML template: %w", err)
+	}
+
+	interactiveTmpl, err := template.New("interactive").Parse(interactiveHTMLTemplate)
+	if err != nil {
+		return fmt.Errorf("parsing interactive HTML template: %w", err)
+	}
+
+	state := &serverState{}
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		logger.Debug("request received", "method", r.Method, "path", r.URL.Path)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		data, tmpl := state.get()
+		if data == nil {
+			if err := landingTmpl.Execute(w, nil); err != nil {
+				logger.Error("failed to render landing template", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		td, err := prepareTemplateData(*data)
+		if err != nil {
+			logger.Error("failed to prepare template data", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if err := tmpl.Execute(w, td); err != nil {
+			logger.Error("failed to render interactive template", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("/api/load", handleLoad(state, interactiveTmpl, logger))
+
+	addr := fmt.Sprintf(":%d", port)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	url := fmt.Sprintf("http://localhost:%d", port)
+	logger.Info("starting HTTP server (no-data mode)", "addr", url)
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("HTTP server error: %w", err)
+		}
+		close(errCh)
+	}()
+
+	if openBrowser {
+		openInBrowser(url, logger)
+	}
+
+	select {
+	case err := <-errCh:
+		state.close()
+		return err
+	case <-ctx.Done():
+		logger.Info("shutting down HTTP server")
+		state.close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("HTTP server shutdown error: %w", err)
+		}
+		return nil
+	}
+}
+
+// prepareTemplateData converts InteractiveData into the template struct.
+func prepareTemplateData(data diagram.InteractiveData) (interactiveData, error) {
+	jsonBytes, err := json.Marshal(struct {
+		Interfaces []diagram.InteractiveInterface `json:"interfaces"`
+		Types      []diagram.InteractiveType      `json:"types"`
+		Relations  []diagram.InteractiveRelation  `json:"relations"`
+	}{
+		Interfaces: data.Interfaces,
+		Types:      data.Types,
+		Relations:  data.Relations,
+	})
+	if err != nil {
+		return interactiveData{}, fmt.Errorf("marshaling interactive data to JSON: %w", err)
+	}
+
+	pkgMapBytes, err := json.Marshal(data.PackageMapNodes)
+	if err != nil {
+		return interactiveData{}, fmt.Errorf("marshaling package map data to JSON: %w", err)
+	}
+
+	return interactiveData{
+		DataJSON:       template.JS(jsonBytes),   //nolint:gosec // JSON is generated from trusted internal data, not user input
+		PackageMapJSON: template.JS(pkgMapBytes), //nolint:gosec // JSON is generated from trusted internal data, not user input
+		RepoAddress:    data.RepoAddress,
+	}, nil
+}
+
+// handleLoad returns an HTTP handler for POST /api/load that runs the analysis
+// pipeline and swaps the server state to the interactive view.
+func handleLoad(state *serverState, interactiveTmpl *template.Template, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"}) //nolint:errcheck
+			logger.Warn("malformed JSON in /api/load", "error", err)
+			return
+		}
+
+		req.Path = strings.TrimSpace(req.Path)
+		if req.Path == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "path is required"}) //nolint:errcheck
+			logger.Warn("empty path in /api/load")
+			return
+		}
+
+		if strings.HasPrefix(req.Path, "http://") || strings.HasPrefix(req.Path, "https://") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "use -path flag for GitHub URLs"}) //nolint:errcheck
+			logger.Warn("HTTP URL rejected in /api/load", "path", req.Path)
+			return
+		}
+
+		logger.Info("running analysis", "path", req.Path)
+		data, cleanup, err := RunAnalysis(r.Context(), AnalysisConfig{Input: req.Path}, logger)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+			logger.Error("analysis failed", "error", err)
+			return
+		}
+		state.set(&data, interactiveTmpl, cleanup)
+		logger.Info("analysis loaded successfully", "path", req.Path,
+			"interfaces", len(data.Interfaces), "types", len(data.Types))
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true}) //nolint:errcheck
 	}
 }
 
