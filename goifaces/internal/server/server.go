@@ -1559,6 +1559,12 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       document.getElementById('zoom-reset').addEventListener('click', function() {
         scale = 1;
         applyZoom();
+        // Clear all selections
+        selectedTypeIDs = {};
+        selectedIfaceIDs = {};
+        document.querySelectorAll('.impl-cb, .iface-cb').forEach(function(cb) { cb.checked = false; });
+        dismissOverlay();
+        updateSelectionUI();
       });
 
       document.getElementById('copy-src').addEventListener('click', function() {
