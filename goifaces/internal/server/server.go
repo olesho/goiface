@@ -1140,15 +1140,9 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
         var container = document.getElementById('pkgmap-html-container');
         container.innerHTML = '';
         var w = viewport.clientWidth - 16;
-        var viewportH = viewport.clientHeight - 16;
-        if (w <= 0 || viewportH <= 0) return;
+        var h = viewport.clientHeight - 16;
+        if (w <= 0 || h <= 0) return;
         var nodes = flattenTree(pkgMapData, 3);
-        // Compute a content-appropriate height so blocks stay compact at top-left
-        // instead of stretching to fill the entire viewport.
-        var totalValue = 0;
-        for (var i = 0; i < nodes.length; i++) totalValue += nodes[i].value;
-        var targetArea = totalValue * MAX_BLOCK_HEIGHT * MAX_BLOCK_HEIGHT;
-        var h = Math.min(viewportH, Math.max(MAX_BLOCK_HEIGHT + 2 * TREEMAP_GAP, Math.ceil(targetArea / w)));
         renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
         updatePackageMapHighlights();
         updatePackageMapBadges();
