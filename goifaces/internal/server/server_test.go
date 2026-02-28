@@ -138,15 +138,14 @@ func TestTreemapMinDimensions(t *testing.T) {
 		"treemap nodes or groups should allow visible overflow on hover")
 }
 
-func TestTreemapVerticalStackFallback(t *testing.T) {
-	// The renderTreemap function must detect when squarify produces
-	// children narrower than MIN_NODE_WIDTH and fall back to vertical stacking.
-	assert.Contains(t, interactiveHTMLTemplate, "MIN_NODE_WIDTH",
-		"template should define MIN_NODE_WIDTH constant")
-	assert.Contains(t, interactiveHTMLTemplate, "verticalStack",
-		"template should contain verticalStack fallback function")
-	assert.Contains(t, interactiveHTMLTemplate, "needsVerticalStack",
-		"template should check for overflow and trigger vertical stacking")
+func TestTreemapGridLayout(t *testing.T) {
+	// The treemap container uses CSS Grid for responsive tile layout.
+	assert.Contains(t, interactiveHTMLTemplate, "display: grid",
+		"treemap-container should use CSS grid layout")
+	assert.Contains(t, interactiveHTMLTemplate, "auto-fill",
+		"treemap grid should use auto-fill for responsive columns")
+	assert.Contains(t, interactiveHTMLTemplate, "gridColumn",
+		"tiles should span grid columns based on content size")
 }
 
 func TestTreemapOverlayNoMaxWidth(t *testing.T) {
@@ -215,7 +214,7 @@ func TestTreemapOverlayCSSPositioning(t *testing.T) {
 	// Verify the CSS positioning foundation that makes absolute overlay
 	// positioning work within the viewport container.
 	assert.Contains(t, interactiveHTMLTemplate,
-		".treemap-viewport {\n      flex: 1;\n      overflow: hidden;\n      padding: 0.5rem;\n      position: relative;",
+		".treemap-viewport {\n      flex: 1;\n      overflow: auto;\n      padding: 0.5rem;\n      position: relative;",
 		".treemap-viewport must have position: relative to establish containing block")
 	assert.Contains(t, interactiveHTMLTemplate,
 		".treemap-overlay {\n      position: absolute;",

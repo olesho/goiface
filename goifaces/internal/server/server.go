@@ -358,21 +358,24 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     /* Treemap styles */
     .treemap-viewport {
       flex: 1;
-      overflow: hidden;
+      overflow: auto;
       padding: 0.5rem;
       position: relative;
       width: 100%;
-      height: calc(100vh - 200px);
+      max-height: calc(100vh - 200px);
     }
 
     .treemap-container {
-      width: 100%;
-      height: 100%;
-      position: relative;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: start;
+      align-content: start;
+      transform-origin: top left;
     }
 
     .treemap-node {
-      position: absolute;
+      position: relative;
       overflow: hidden;
       border: 1px solid rgba(0,0,0,0.15);
       border-radius: 3px;
@@ -385,6 +388,8 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       transition: border-color 0.15s, border-width 0.15s, box-shadow 0.15s;
       min-height: 36px;
       min-width: 80px;
+      padding: 12px 8px;
+      box-sizing: border-box;
     }
 
     .treemap-node:hover {
@@ -415,12 +420,18 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
     }
 
     .treemap-group {
-      position: absolute;
+      position: relative;
       overflow: visible;
       border: 2px solid rgba(0,0,0,0.2);
       border-radius: 4px;
       min-height: 24px;
-      min-width: 50px;
+      padding: 28px 8px 8px;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      align-items: start;
+      align-content: start;
     }
 
     .treemap-group-label {
@@ -430,6 +441,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       font-size: 0.7rem;
       font-weight: 600;
       background: rgba(0,0,0,0.06);
+      border-radius: 4px 4px 0 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -983,35 +995,25 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
           return colorIdx;
         }
 
-        var positioned = squarify(nodes, rect);
-
-        // If any child would be narrower than MIN_NODE_WIDTH, fall back to vertical stacking
-        var needsVerticalStack = false;
-        for (var i = 0; i < positioned.length; i++) {
-          if (positioned[i].w - 2 * TREEMAP_GAP < MIN_NODE_WIDTH) {
-            needsVerticalStack = true;
-            break;
-          }
-        }
-        if (needsVerticalStack) {
-          positioned = verticalStack(nodes, rect);
+        // Compute column spans based on relative value
+        var maxVal = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].value > maxVal) maxVal = nodes[i].value;
         }
 
-        for (var i = 0; i < positioned.length; i++) {
-          var p = positioned[i];
-          var d = p.data;
+        for (var i = 0; i < nodes.length; i++) {
+          var d = nodes[i];
           var ci = (colorIdx + i) % treemapPalette.length;
           var color = treemapPalette[ci];
+          // Tiles with more content span more columns (1-3)
+          var span = maxVal > 0 ? Math.max(1, Math.min(3, Math.ceil(3 * d.value / maxVal))) : 1;
 
           if (d.children && d.children.length > 0) {
-            // Group node
+            // Group node — a titled container with its own inner grid
             var group = document.createElement('div');
             group.className = 'treemap-group';
-            group.style.left = (p.x + TREEMAP_GAP) + 'px';
-            group.style.top = (p.y + TREEMAP_GAP) + 'px';
-            group.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
-            group.style.height = Math.max(0, p.h - 2 * TREEMAP_GAP) + 'px';
             group.style.background = color.fill;
+            group.style.gridColumn = 'span ' + span;
 
             var label = document.createElement('div');
             label.className = 'treemap-group-label';
@@ -1019,29 +1021,11 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             label.style.color = color.text;
             group.appendChild(label);
 
-            var headerH = 20;
-            var gw = Math.max(0, p.w - 2 * TREEMAP_GAP);
-            var gh = Math.max(0, p.h - 2 * TREEMAP_GAP);
-            var innerPad = 9;
-            var innerRect = {x: innerPad, y: headerH, w: Math.max(0, gw - 2 * innerPad), h: Math.max(0, gh - headerH - innerPad)};
-
-            // If this node is also a package, add a self node
+            // If this node is also a package itself, add a self tile
             if (d.interfaces > 0 || d.types > 0) {
-              var selfValue = d.interfaces + d.types;
-              if (selfValue < 1) selfValue = 1;
-              var childrenValue = 0;
-              for (var k = 0; k < d.children.length; k++) childrenValue += d.children[k].value;
-              var selfFraction = selfValue / (selfValue + childrenValue);
-              var selfH = innerRect.h * selfFraction;
-
-              var renderedSelfH = Math.min(MAX_BLOCK_HEIGHT, Math.max(0, selfH));
               var selfNode = document.createElement('div');
               selfNode.className = 'treemap-node';
               if (d.pkgPath) selfNode.setAttribute('data-pkgpath', d.pkgPath);
-              selfNode.style.left = innerRect.x + 'px';
-              selfNode.style.top = innerRect.y + 'px';
-              selfNode.style.width = innerRect.w + 'px';
-              selfNode.style.height = renderedSelfH + 'px';
               selfNode.style.background = treemapPalette[(ci + 1) % treemapPalette.length].fill;
               selfNode.style.color = color.text;
 
@@ -1056,23 +1040,18 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
               attachTooltip(selfNode, d);
               attachClickHandler(selfNode, d);
               group.appendChild(selfNode);
-
-              innerRect = {x: innerRect.x, y: innerRect.y + renderedSelfH, w: innerRect.w, h: Math.max(0, innerRect.h - renderedSelfH)};
             }
 
-            colorIdx = renderTreemap(group, d.children, innerRect, depth + 1, ci + 1);
+            colorIdx = renderTreemap(group, d.children, rect, depth + 1, ci + 1);
             container.appendChild(group);
           } else {
-            // Leaf node
+            // Leaf node — a simple tile
             var node = document.createElement('div');
             node.className = 'treemap-node';
             if (d.pkgPath) node.setAttribute('data-pkgpath', d.pkgPath);
-            node.style.left = (p.x + TREEMAP_GAP) + 'px';
-            node.style.top = (p.y + TREEMAP_GAP) + 'px';
-            node.style.width = Math.max(0, p.w - 2 * TREEMAP_GAP) + 'px';
-            node.style.height = Math.min(MAX_BLOCK_HEIGHT, Math.max(0, p.h - 2 * TREEMAP_GAP)) + 'px';
             node.style.background = color.fill;
             node.style.color = color.text;
+            node.style.gridColumn = 'span ' + span;
 
             var nameEl = document.createElement('div');
             nameEl.className = 'tm-name';
@@ -1087,7 +1066,7 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
             container.appendChild(node);
           }
         }
-        return colorIdx + positioned.length;
+        return colorIdx + nodes.length;
       }
 
       function statsText(d) {
@@ -1136,14 +1115,10 @@ const interactiveHTMLTemplate = `<!DOCTYPE html>
       var resizeTimer = null;
       function layoutTreemap() {
         dismissOverlay();
-        var viewport = document.getElementById('pkgmap-html-viewport');
         var container = document.getElementById('pkgmap-html-container');
         container.innerHTML = '';
-        var w = viewport.clientWidth - 16;
-        var h = viewport.clientHeight - 16;
-        if (w <= 0 || h <= 0) return;
         var nodes = flattenTree(pkgMapData, 3);
-        renderTreemap(container, nodes, {x: 0, y: 0, w: w, h: h}, 0, 0);
+        renderTreemap(container, nodes, null, 0, 0);
         updatePackageMapHighlights();
         updatePackageMapBadges();
       }
